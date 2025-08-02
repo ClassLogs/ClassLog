@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { motion } from "framer-motion"
 import {
   QrCode,
   User,
@@ -22,11 +23,9 @@ import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Progress } from "@/components/ui/progress"
 import { ThemeToggle } from "@/components/theme-toggle"
-import { QRScanner } from "@/components/qr-scanner"
+import { MobileQRScanner } from "@/components/mobile-qr-scanner"
 import { useRouter } from "next/navigation"
 import { useToast } from "@/hooks/use-toast"
-import { motion } from "framer-motion"
-import { formatIndianTime } from "@/lib/format-indian-time" // Import the new utility
 
 interface AttendanceRecord {
   id: string
@@ -137,7 +136,6 @@ const calculateSubjectStats = (records: AttendanceRecord[]): SubjectStats[] => {
 
 export default function StudentPortal() {
   const [currentStep, setCurrentStep] = useState(0)
-  const [currentTime, setCurrentTime] = useState<string>("") // New state for current time
 
   const router = useRouter()
   const { toast } = useToast()
@@ -145,14 +143,6 @@ export default function StudentPortal() {
   const subjectStats = calculateSubjectStats(attendanceHistory)
   const userName = typeof window !== "undefined" ? localStorage.getItem("userName") || "John Doe" : "John Doe"
   const studentId = typeof window !== "undefined" ? localStorage.getItem("studentId") || "STU001" : "STU001"
-
-  // Update current time every second
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setCurrentTime(formatIndianTime(new Date()))
-    }, 1000)
-    return () => clearInterval(timer)
-  }, [])
 
   // Check authentication
   useEffect(() => {
@@ -220,7 +210,7 @@ export default function StudentPortal() {
 
             <div className="flex items-center gap-4">
               <div className="hidden md:block text-sm text-gray-600 dark:text-gray-400">
-                {currentTime} {/* Display dynamic time */}
+                Saturday, August 2, 2025 • 09:04:20 AM
               </div>
               <ThemeToggle />
               <Button variant="outline" size="sm" onClick={handleLogout}>
@@ -251,7 +241,7 @@ export default function StudentPortal() {
                     </span>
                   </div>
                 </div>
-                <Badge variant="secondary" className="bg-white/20 text-white/20">
+                <Badge variant="secondary" className="bg-white/20 text-white border-white/20">
                   Active
                 </Badge>
               </div>
@@ -283,9 +273,9 @@ export default function StudentPortal() {
           {/* Panel 1: QR Scanner */}
           <TabsContent value="scanner" className="space-y-6">
             <div className="grid lg:grid-cols-2 gap-8">
-              {/* QR Scanner */}
+              {/* Mobile QR Scanner */}
               <div className="flex justify-center">
-                <QRScanner
+                <MobileQRScanner
                   onScanSuccess={handleScanSuccess}
                   onScanError={handleScanError}
                   apiEndpoint="/api/mock-attendance"
@@ -328,7 +318,7 @@ export default function StudentPortal() {
                       </div>
                       <div className="flex items-center gap-3">
                         <Badge className="bg-green-500">✓</Badge>
-                        <span className="text-sm">Laptop optimized</span>
+                        <span className="text-sm">Mobile optimized</span>
                       </div>
                     </div>
                   </div>

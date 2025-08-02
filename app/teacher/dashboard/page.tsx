@@ -29,8 +29,6 @@ import { ThemeToggle } from "@/components/theme-toggle"
 import { QRCodeSVG } from "qrcode.react"
 import { useRouter } from "next/navigation"
 import { useToast } from "@/hooks/use-toast"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { formatIndianTime } from "@/lib/format-indian-time" // Import the new utility
 
 interface ClassData {
   id: string
@@ -83,26 +81,16 @@ export default function TeacherDashboard() {
   const [selectedClass, setSelectedClass] = useState<ClassData>(classes[0])
   const [sessionActive, setSessionActive] = useState(false)
   const [qrCode, setQrCode] = useState("")
-  const [timeLeft, setTimeLeft] = useState(10)
+  const [timeLeft, setTimeLeft] = useState(15)
   const [studentsPresent, setStudentsPresent] = useState(0)
   const [studentList, setStudentList] = useState<Student[]>(students)
   const [searchTerm, setSearchTerm] = useState("")
-  const [showFullScreenQR, setShowFullScreenQR] = useState(false)
-  const [currentTime, setCurrentTime] = useState<string>("") // New state for current time
 
   const router = useRouter()
   const { toast } = useToast()
 
   const userName =
     typeof window !== "undefined" ? localStorage.getItem("userName") || "Dr. Sarah Johnson" : "Dr. Sarah Johnson"
-
-  // Update current time every second
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setCurrentTime(formatIndianTime(new Date()))
-    }, 1000)
-    return () => clearInterval(timer)
-  }, [])
 
   // Check authentication
   useEffect(() => {
@@ -134,8 +122,8 @@ export default function TeacherDashboard() {
         const sessionId = Math.random().toString(36).substring(7)
         const timestamp = Date.now()
         setQrCode(`${selectedClass.id}-${sessionId}-${timestamp}`)
-        setTimeLeft(10)
-      }, 10000)
+        setTimeLeft(15)
+      }, 15000)
 
       const sessionId = Math.random().toString(36).substring(7)
       const timestamp = Date.now()
@@ -165,7 +153,7 @@ export default function TeacherDashboard() {
   const stopSession = () => {
     setSessionActive(false)
     setQrCode("")
-    setTimeLeft(10)
+    setTimeLeft(15)
     toast({
       title: "Session Stopped",
       description: "Attendance session has been ended.",
@@ -262,7 +250,7 @@ export default function TeacherDashboard() {
 
             <div className="flex items-center gap-4">
               <div className="hidden md:block text-sm text-gray-600 dark:text-gray-400">
-                {currentTime} {/* Display dynamic time */}
+                Saturday, August 2, 2025 • 09:06:37 AM
               </div>
               <ThemeToggle />
               <Button variant="outline" size="sm" onClick={handleLogout}>
@@ -293,7 +281,7 @@ export default function TeacherDashboard() {
                     </span>
                   </div>
                 </div>
-                <Badge variant="secondary" className="bg-white/20 text-white/20">
+                <Badge variant="secondary" className="bg-white/20 text-white border-white/20">
                   Online
                 </Badge>
               </div>
@@ -400,75 +388,34 @@ export default function TeacherDashboard() {
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-6">
-                    <div className="flex flex-col items-center">
-                      {" "}
-                      {/* Changed to flex-col for better layout */}
-                      <Dialog open={showFullScreenQR} onOpenChange={setShowFullScreenQR}>
-                        <DialogTrigger asChild>
-                          <div className="relative cursor-pointer group">
-                            {" "}
-                            {/* Added group for hover effect */}
-                            <motion.div
-                              key={qrCode}
-                              initial={{ scale: 0.8, opacity: 0 }}
-                              animate={{ scale: 1, opacity: 1 }}
-                              transition={{ duration: 0.3 }}
-                              className="p-6 bg-white dark:bg-gray-100 rounded-lg border-2 border-blue-200 dark:border-blue-300 shadow-lg"
-                            >
-                              {sessionActive && qrCode ? (
-                                <QRCodeSVG value={qrCode} size={200} level="M" includeMargin />
-                              ) : (
-                                <div className="w-[200px] h-[200px] flex items-center justify-center bg-gray-100 dark:bg-gray-800 rounded">
-                                  <QrCode className="w-16 h-16 text-gray-400" />
-                                </div>
-                              )}
-                            </motion.div>
-                            {sessionActive && (
-                              <motion.div
-                                initial={{ opacity: 0 }}
-                                animate={{ opacity: 1 }}
-                                className="absolute -bottom-2 -right-2 bg-blue-500 text-white rounded-full w-10 h-10 flex items-center justify-center text-sm font-bold shadow-lg"
-                              >
-                                {timeLeft}
-                              </motion.div>
-                            )}
-                            {sessionActive && (
-                              <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg">
-                                <Button variant="secondary" className="text-white">
-                                  <QrCode className="w-5 h-5 mr-2" />
-                                  View Fullscreen
-                                </Button>
-                              </div>
-                            )}
-                          </div>
-                        </DialogTrigger>
-                        <DialogContent className="sm:max-w-[425px] p-6">
-                          <DialogHeader>
-                            <DialogTitle className="text-center">Full Screen QR Code</DialogTitle>
-                          </DialogHeader>
-                          <div className="flex flex-col items-center justify-center p-4">
-                            {qrCode ? (
-                              <QRCodeSVG value={qrCode} size={300} level="M" includeMargin />
-                            ) : (
-                              <div className="w-[300px] h-[300px] flex items-center justify-center bg-gray-100 dark:bg-gray-800 rounded">
-                                <QrCode className="w-24 h-24 text-gray-400" />
-                              </div>
-                            )}
-                            {qrCode && (
-                              <div className="mt-4 text-center text-sm text-gray-600 dark:text-gray-400 break-all">
-                                <p className="font-semibold">Reference ID:</p>
-                                <p className="text-xs">{qrCode}</p>
-                              </div>
-                            )}
-                          </div>
-                        </DialogContent>
-                      </Dialog>
-                      {sessionActive && qrCode && (
-                        <div className="mt-4 text-center text-sm text-gray-600 dark:text-gray-400">
-                          <p className="font-semibold">Current Reference ID:</p>
-                          <p className="text-xs break-all">{qrCode}</p>
-                        </div>
-                      )}
+                    <div className="flex justify-center">
+                      <div className="relative">
+                        <motion.div
+                          key={qrCode}
+                          initial={{ scale: 0.8, opacity: 0 }}
+                          animate={{ scale: 1, opacity: 1 }}
+                          transition={{ duration: 0.3 }}
+                          className="p-6 bg-white dark:bg-gray-100 rounded-lg border-2 border-blue-200 dark:border-blue-300 shadow-lg"
+                        >
+                          {sessionActive && qrCode ? (
+                            <QRCodeSVG value={qrCode} size={200} level="M" includeMargin />
+                          ) : (
+                            <div className="w-[200px] h-[200px] flex items-center justify-center bg-gray-100 dark:bg-gray-800 rounded">
+                              <QrCode className="w-16 h-16 text-gray-400" />
+                            </div>
+                          )}
+                        </motion.div>
+
+                        {sessionActive && (
+                          <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            className="absolute -bottom-2 -right-2 bg-blue-500 text-white rounded-full w-10 h-10 flex items-center justify-center text-sm font-bold shadow-lg"
+                          >
+                            {timeLeft}
+                          </motion.div>
+                        )}
+                      </div>
                     </div>
 
                     <div className="flex gap-3">
@@ -503,7 +450,7 @@ export default function TeacherDashboard() {
                           <h4 className="font-medium mb-2">Session Instructions:</h4>
                           <ul className="text-sm space-y-1 text-gray-600 dark:text-gray-400">
                             <li>• Students scan QR code to mark attendance</li>
-                            <li>• QR code updates every 10 seconds for security</li>
+                            <li>• QR code updates every 15 seconds for security</li>
                             <li>
                               • Attendance recorded for {selectedClass.subject} - {selectedClass.name}
                             </li>

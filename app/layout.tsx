@@ -10,7 +10,6 @@ const inter = Inter({ subsets: ["latin"] })
 export const metadata: Metadata = {
   title: "Hybrid Attendance System",
   description: "Professional QR-based attendance tracking system",
-    generator: 'v0.dev'
 }
 
 export default function RootLayout({

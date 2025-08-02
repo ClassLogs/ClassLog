@@ -1,9 +1,10 @@
 "use client"
 
-import { QRScanner } from "@/components/qr-scanner" // Updated import
+import { MobileQRScanner } from "@/components/mobile-qr-scanner"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Wifi, Shield } from "lucide-react" // Changed Smartphone to Monitor
+import { Badge } from "@/components/ui/badge"
+import { Smartphone, Wifi, Shield } from "lucide-react"
 
 export default function QRScannerDemo() {
   const handleScanSuccess = (result: string) => {
@@ -20,7 +21,7 @@ export default function QRScannerDemo() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold">QR Scanner Demo</h1>
-          <p className="text-gray-600 dark:text-gray-400">Laptop-optimized QR code scanner</p>
+          <p className="text-gray-600 dark:text-gray-400">Mobile-optimized QR code scanner</p>
         </div>
         <ThemeToggle />
       </div>
@@ -28,14 +29,40 @@ export default function QRScannerDemo() {
       <div className="max-w-6xl mx-auto grid lg:grid-cols-2 gap-8">
         {/* Scanner Component */}
         <div className="flex flex-col items-center">
-          <QRScanner // Updated component name
+          <MobileQRScanner
             onScanSuccess={handleScanSuccess}
             onScanError={handleScanError}
             apiEndpoint="/api/mock-attendance"
             className="mb-6"
           />
 
-          {/* Removed Mobile Features Card */}
+          {/* Mobile Features */}
+          <Card className="w-full max-w-md">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <Smartphone className="w-5 h-5" />
+                Mobile Features
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex items-center gap-3">
+                <Badge className="bg-green-500">✓</Badge>
+                <span className="text-sm">Auto camera permissions</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <Badge className="bg-green-500">✓</Badge>
+                <span className="text-sm">Front/back camera flip</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <Badge className="bg-green-500">✓</Badge>
+                <span className="text-sm">Responsive design</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <Badge className="bg-green-500">✓</Badge>
+                <span className="text-sm">Real-time scanning</span>
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
         {/* Documentation */}
@@ -53,9 +80,9 @@ export default function QRScannerDemo() {
                 <h4 className="font-medium mb-2">POST Request Format:</h4>
                 <pre className="text-xs overflow-x-auto">
                   {`{
-"qrCode": "scanned-qr-content",
-"timestamp": "2025-01-02T10:30:00Z",
-"studentId": "STU001"
+  "qrCode": "scanned-qr-content",
+  "timestamp": "2025-01-02T10:30:00Z",
+  "studentId": "STU001"
 }`}
                 </pre>
               </div>
@@ -64,9 +91,9 @@ export default function QRScannerDemo() {
                 <h4 className="font-medium mb-2 text-blue-800 dark:text-blue-200">Success Response:</h4>
                 <pre className="text-xs text-blue-600 dark:text-blue-300">
                   {`{
-"success": true,
-"message": "Attendance marked",
-"attendanceId": "att_123"
+  "success": true,
+  "message": "Attendance marked",
+  "attendanceId": "att_123"
 }`}
                 </pre>
               </div>
@@ -121,9 +148,9 @@ export default function QRScannerDemo() {
             <CardContent>
               <div className="bg-gray-100 dark:bg-gray-800 p-4 rounded-lg">
                 <pre className="text-xs overflow-x-auto">
-                  {`import { QRScanner } from "@/components/qr-scanner" // Updated import
+                  {`import { MobileQRScanner } from "@/components/mobile-qr-scanner"
 
-<QRScanner
+<MobileQRScanner
   onScanSuccess={(result) => {
     console.log("Scanned:", result)
   }}
