@@ -54,7 +54,7 @@ const attendanceHistory: AttendanceRecord[] = [
     date: "Aug 2, 2025",
     time: "10:30",
     subject: "DBMS",
-    teacher: "Prof. Mike Chen",
+    teacher: "Prof. Mike Chan",
     status: "present",
     markedAt: "10:59",
   },
