@@ -1,7 +1,18 @@
 "use client"
 
 import { useState, useEffect, useRef, useCallback } from "react"
-import { Camera, RotateCcw, RefreshCw, CheckCircle, XCircle, Monitor, Square, Loader2, Info, Mic } from "lucide-react"
+import {
+  Camera,
+  RotateCcw,
+  RefreshCw,
+  CheckCircle,
+  XCircle,
+  Smartphone,
+  Square,
+  Loader2,
+  Info,
+  Mic,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -26,11 +37,8 @@ type MediaStreamStatus =
   | "stream_error"
   | "no_devices"
   | "initializing_devices"
-  | "retrying_stream" // New status for retries
 
-const MAX_RETRIES = 3 // Max attempts to start camera
-
-export function QRScanner({
+export function MobileQRScanner({
   onScanSuccess,
   onScanError,
   apiEndpoint = "/api/attendance/mark",
@@ -49,7 +57,6 @@ export function QRScanner({
   const [cameraInitializing, setCameraInitializing] = useState(false)
   const [cameraStartupError, setCameraStartupError] = useState<string | null>(null)
   const [mediaStreamStatus, setMediaStreamStatus] = useState<MediaStreamStatus>("idle")
-  const [retryCount, setRetryCount] = useState(0) // New state for retry count
 
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -61,7 +68,6 @@ export function QRScanner({
     console.log("initializeMediaDevices: Starting device enumeration and permission check.")
     setCameraInitializing(true)
     setCameraStartupError(null)
-    setError(null) // Clear general error on re-initialization
     setMediaStreamStatus("initializing_devices")
     try {
       // Request permission by trying to access both camera and microphone
@@ -113,7 +119,7 @@ export function QRScanner({
     } catch (err: any) {
       console.error("initializeMediaDevices: Error initializing media devices:", err)
       setCameraPermissionGranted(false)
-      setMicrophonePermissionGranted(false) // Assume both denied if general permission error
+      setMicrophonePermissionGranted(false)
       const errorMessage =
         err.name === "NotAllowedError" || err.name === "PermissionDeniedError"
           ? "Camera and/or microphone permission denied. Please allow access in your browser settings."
@@ -121,7 +127,7 @@ export function QRScanner({
             ? "No camera or microphone found on this device."
             : `Failed to access media devices: ${err.message || err.name}`
       setError(errorMessage)
-      setCameraStartupError(errorMessage) // Set specific startup error
+      setCameraStartupError(errorMessage)
       setMediaStreamStatus("permission_denied")
       toast({
         title: "Media Access Error",
@@ -139,10 +145,8 @@ export function QRScanner({
     initializeMediaDevices()
   }, [initializeMediaDevices])
 
-  const startCamera = async (attempt = 1) => {
-    console.log(`startCamera: Attempting to start camera (Attempt ${attempt}/${MAX_RETRIES}).`)
-    setRetryCount(attempt - 1) // Update retry count for UI
-
+  const startCamera = async () => {
+    console.log("startCamera: Attempting to start camera.")
     if (cameraPermissionGranted === false) {
       setError("Camera permission denied. Please allow camera access in your browser settings.")
       toast({
@@ -168,7 +172,7 @@ export function QRScanner({
     setCameraInitializing(true)
     setCameraStartupError(null)
     setError(null)
-    setMediaStreamStatus(attempt > 1 ? "retrying_stream" : "requesting_permissions")
+    setMediaStreamStatus("requesting_permissions")
     try {
       if (stream) {
         console.log("startCamera: Stopping existing stream before starting new one.")
@@ -200,7 +204,6 @@ export function QRScanner({
             console.log("startCamera: Video started playing successfully.")
             setIsScanning(true)
             setMediaStreamStatus("stream_active")
-            setRetryCount(0) // Reset retry count on success
             toast({
               title: "Camera Started",
               description: `Using ${cameraFacing === "environment" ? "back" : "front"} camera`,
@@ -217,18 +220,8 @@ export function QRScanner({
               description: errorMessage,
               variant: "destructive",
             })
-            if (attempt < MAX_RETRIES) {
-              console.log(`startCamera: Retrying video playback in 1 second... (Attempt ${attempt + 1})`)
-              setTimeout(() => startCamera(attempt + 1), 1000)
-            } else {
-              console.error("startCamera: Max retries reached for video playback.")
-              setCameraInitializing(false)
-            }
           } finally {
-            if (attempt >= MAX_RETRIES || isScanning) {
-              // Only set false if max retries reached or successful
-              setCameraInitializing(false)
-            }
+            setCameraInitializing(false)
           }
         }
 
@@ -260,6 +253,7 @@ export function QRScanner({
     } catch (err: any) {
       console.error("startCamera: Error starting camera (getUserMedia failed):", err)
       setIsScanning(false)
+      setCameraInitializing(false)
       const errorMessage =
         err.name === "NotAllowedError" || err.name === "PermissionDeniedError"
           ? "Camera and/or microphone access denied. Please grant permission in your browser settings."
@@ -278,14 +272,6 @@ export function QRScanner({
         description: errorMessage,
         variant: "destructive",
       })
-
-      if (attempt < MAX_RETRIES && (err.name === "NotReadableError" || err.name === "OverconstrainedError")) {
-        console.log(`startCamera: Retrying getUserMedia in 1 second... (Attempt ${attempt + 1})`)
-        setTimeout(() => startCamera(attempt + 1), 1000)
-      } else {
-        console.error("startCamera: Max retries reached for getUserMedia or unrecoverable error.")
-        setCameraInitializing(false)
-      }
     }
   }
 
@@ -312,7 +298,6 @@ export function QRScanner({
 
     setIsScanning(false)
     setMediaStreamStatus("idle")
-    setRetryCount(0) // Reset retry count
     console.log("stopCamera: Camera stopped.")
   }, [stream])
 
@@ -484,7 +469,6 @@ export function QRScanner({
     setError(null)
     setCameraStartupError(null)
     setIsProcessing(false)
-    setRetryCount(0) // Reset retry count
 
     if (isScanning) {
       stopCamera()
@@ -533,7 +517,7 @@ export function QRScanner({
 
             <div className="flex items-center gap-1">
               <Badge variant="outline" className="text-xs">
-                <Monitor className="w-3 h-3 mr-1" />
+                <Smartphone className="w-3 h-3 mr-1" />
                 {cameraFacing === "environment" ? "Back" : "Front"}
               </Badge>
               {microphonePermissionGranted !== null && (
@@ -580,9 +564,7 @@ export function QRScanner({
               {cameraInitializing && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-4 bg-gray-100 dark:bg-gray-800">
                   <Loader2 className="w-12 h-12 text-blue-500 animate-spin mb-3" />
-                  <p className="text-blue-600 dark:text-blue-400 text-sm">
-                    Starting camera... {retryCount > 0 && `(Retry ${retryCount}/${MAX_RETRIES})`}
-                  </p>
+                  <p className="text-blue-600 dark:text-blue-400 text-sm">Starting camera...</p>
                   <p className="text-gray-400 text-xs">Please grant camera and microphone permissions if prompted.</p>
                 </div>
               )}
@@ -680,14 +662,14 @@ export function QRScanner({
           <div className="space-y-3">
             {!isScanning ? (
               <Button
-                onClick={() => startCamera(1)} // Start with first attempt
+                onClick={startCamera}
                 className="w-full h-12 bg-blue-600 hover:bg-blue-700"
                 disabled={cameraPermissionGranted === false || availableCameras.length === 0 || cameraInitializing}
               >
                 {cameraInitializing ? (
                   <>
                     <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                    Starting Camera... {retryCount > 0 && `(Retry ${retryCount}/${MAX_RETRIES})`}
+                    Starting Camera...
                   </>
                 ) : cameraStartupError ? (
                   <>

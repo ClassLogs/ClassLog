@@ -1,187 +1,276 @@
 "use client"
 
-import type React from "react"
 import { useState } from "react"
-import { useRouter } from "next/navigation"
+import { motion } from "framer-motion"
+import { GraduationCap, Users, UserCheck, Eye, EyeOff } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Eye, EyeOff, GraduationCap, Users } from "lucide-react"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { ThemeToggle } from "@/components/theme-toggle"
+import { useRouter } from "next/navigation"
+import { useToast } from "@/hooks/use-toast"
 
 export default function LoginPage() {
-  const [email, setEmail] = useState("")
-  const [password, setPassword] = useState("")
-  const [showPassword, setShowPassword] = useState(false)
+  const [teacherCredentials, setTeacherCredentials] = useState({
+    email: "",
+    password: "",
+  })
+  const [studentCredentials, setStudentCredentials] = useState({
+    studentId: "",
+    password: "",
+  })
+  const [showTeacherPassword, setShowTeacherPassword] = useState(false)
+  const [showStudentPassword, setShowStudentPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState("")
-  const [userType, setUserType] = useState<"teacher" | "student">("teacher")
+
   const router = useRouter()
+  const { toast } = useToast()
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleTeacherLogin = async () => {
     setIsLoading(true)
-    setError("")
 
-    try {
-      await new Promise((resolve) => setTimeout(resolve, 1000))
+    // Simulate API call
+    setTimeout(() => {
+      if (teacherCredentials.email && teacherCredentials.password) {
+        localStorage.setItem("userType", "teacher")
+        localStorage.setItem("userToken", "teacher-token-123")
+        localStorage.setItem("userName", "Dr. Sarah Johnson")
 
-      if (userType === "teacher") {
-        if (email === "teacher@school.edu" && password === "password123") {
-          localStorage.setItem("authToken", "mock-jwt-token")
-          localStorage.setItem("teacherName", "Dr. Sarah Johnson")
-          router.push("/dashboard")
-        } else {
-          setError("Invalid email or password")
-        }
+        toast({
+          title: "Login Successful",
+          description: "Welcome back, Dr. Sarah Johnson!",
+        })
+
+        router.push("/teacher/dashboard")
       } else {
-        if (email === "STU001" && password === "student123") {
-          localStorage.setItem("studentAuthToken", "mock-student-jwt-token")
-          localStorage.setItem("studentName", "John Doe")
-          localStorage.setItem("studentId", "STU001")
-          localStorage.setItem("studentClass", "Computer Science - Year 3")
-          router.push("/student/dashboard")
-        } else {
-          setError("Invalid student ID or password")
-        }
+        toast({
+          title: "Login Failed",
+          description: "Please enter valid credentials",
+          variant: "destructive",
+        })
       }
-    } catch (err) {
-      setError("Login failed. Please try again.")
-    } finally {
       setIsLoading(false)
+    }, 1000)
+  }
+
+  const handleStudentLogin = async () => {
+    setIsLoading(true)
+
+    // Simulate API call
+    setTimeout(() => {
+      if (studentCredentials.studentId && studentCredentials.password) {
+        localStorage.setItem("userType", "student")
+        localStorage.setItem("userToken", "student-token-123")
+        localStorage.setItem("userName", "John Doe")
+        localStorage.setItem("studentId", studentCredentials.studentId)
+
+        toast({
+          title: "Login Successful",
+          description: "Welcome, John Doe!",
+        })
+
+        router.push("/student/portal")
+      } else {
+        toast({
+          title: "Login Failed",
+          description: "Please enter valid credentials",
+          variant: "destructive",
+        })
+      }
+      setIsLoading(false)
+    }, 1000)
+  }
+
+  const fillDemoCredentials = (type: "teacher" | "student") => {
+    if (type === "teacher") {
+      setTeacherCredentials({
+        email: "teacher@school.edu",
+        password: "password123",
+      })
+    } else {
+      setStudentCredentials({
+        studentId: "STU001",
+        password: "student123",
+      })
     }
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-slate-50 to-green-50 flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
-        {/* Brand Header */}
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 flex items-center justify-center p-4">
+      {/* Header */}
+      <div className="absolute top-4 right-4">
+        <ThemeToggle />
+      </div>
+
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6 }}
+        className="w-full max-w-md"
+      >
+        {/* Logo Section */}
         <div className="text-center mb-8">
-          <div className="flex items-center justify-center mb-4">
-            <div className={`p-3 rounded-full ${userType === "teacher" ? "bg-blue-600" : "bg-green-600"}`}>
-              {userType === "teacher" ? (
-                <GraduationCap className="h-8 w-8 text-white" />
-              ) : (
-                <Users className="h-8 w-8 text-white" />
-              )}
-            </div>
-          </div>
-          <h1 className="text-3xl font-bold text-slate-800 mb-2">Hybrid Attendance System</h1>
-          <p className="text-slate-600">{userType === "teacher" ? "Teacher Portal" : "Student Portal"}</p>
+          <motion.div
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
+            className="mx-auto w-20 h-20 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-full flex items-center justify-center mb-6 shadow-lg"
+          >
+            <GraduationCap className="w-10 h-10 text-white" />
+          </motion.div>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Hybrid Attendance System</h1>
+          <p className="text-gray-600 dark:text-gray-400">Secure QR-based attendance tracking</p>
         </div>
 
-        {/* User Type Toggle */}
-        <div className="flex mb-6 bg-slate-100 p-1 rounded-lg">
-          <button
-            type="button"
-            onClick={() => setUserType("teacher")}
-            className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-all ${
-              userType === "teacher" ? "bg-white text-blue-600 shadow-sm" : "text-slate-600 hover:text-slate-800"
-            }`}
-          >
-            <GraduationCap className="h-4 w-4 inline mr-2" />
-            Teacher
-          </button>
-          <button
-            type="button"
-            onClick={() => setUserType("student")}
-            className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-all ${
-              userType === "student" ? "bg-white text-green-600 shadow-sm" : "text-slate-600 hover:text-slate-800"
-            }`}
-          >
-            <Users className="h-4 w-4 inline mr-2" />
-            Student
-          </button>
-        </div>
-
-        {/* Login Form */}
-        <Card className="shadow-lg border-0">
-          <CardHeader className="space-y-1">
-            <CardTitle className="text-2xl text-center">Sign In</CardTitle>
-            <CardDescription className="text-center">
-              Enter your credentials to access the {userType} dashboard
-            </CardDescription>
+        {/* Login Card */}
+        <Card className="shadow-2xl border-0 bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm">
+          <CardHeader className="text-center pb-4">
+            <CardTitle className="text-2xl">Sign In</CardTitle>
+            <CardDescription>Choose your portal to continue</CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleLogin} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="email">{userType === "teacher" ? "Email Address" : "Student ID"}</Label>
-                <Input
-                  id="email"
-                  type={userType === "teacher" ? "email" : "text"}
-                  placeholder={userType === "teacher" ? "teacher@school.edu" : "STU001"}
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  className="h-11"
-                />
-              </div>
+            <Tabs defaultValue="teacher" className="w-full">
+              <TabsList className="grid w-full grid-cols-2 mb-6">
+                <TabsTrigger value="teacher" className="flex items-center gap-2">
+                  <Users className="w-4 h-4" />
+                  Teacher
+                </TabsTrigger>
+                <TabsTrigger value="student" className="flex items-center gap-2">
+                  <UserCheck className="w-4 h-4" />
+                  Student
+                </TabsTrigger>
+              </TabsList>
 
-              <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
-                <div className="relative">
+              {/* Teacher Login */}
+              <TabsContent value="teacher" className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="teacher-email">Email Address</Label>
                   <Input
-                    id="password"
-                    type={showPassword ? "text" : "password"}
-                    placeholder="Enter your password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                    className="h-11 pr-10"
+                    id="teacher-email"
+                    type="email"
+                    placeholder="teacher@school.edu"
+                    value={teacherCredentials.email}
+                    onChange={(e) => setTeacherCredentials((prev) => ({ ...prev, email: e.target.value }))}
+                    className="h-11"
                   />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="teacher-password">Password</Label>
+                  <div className="relative">
+                    <Input
+                      id="teacher-password"
+                      type={showTeacherPassword ? "text" : "password"}
+                      placeholder="Enter your password"
+                      value={teacherCredentials.password}
+                      onChange={(e) => setTeacherCredentials((prev) => ({ ...prev, password: e.target.value }))}
+                      className="h-11 pr-10"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                      onClick={() => setShowTeacherPassword(!showTeacherPassword)}
+                    >
+                      {showTeacherPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </Button>
+                  </div>
+                </div>
+                <Button
+                  onClick={handleTeacherLogin}
+                  className="w-full h-11 bg-blue-600 hover:bg-blue-700"
+                  disabled={isLoading}
+                >
+                  {isLoading ? "Signing In..." : "Sign In as Teacher"}
+                </Button>
+                <div className="text-center">
                   <Button
-                    type="button"
-                    variant="ghost"
+                    variant="link"
                     size="sm"
-                    className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
-                    onClick={() => setShowPassword(!showPassword)}
+                    onClick={() => fillDemoCredentials("teacher")}
+                    className="text-xs text-blue-600 hover:text-blue-700"
                   >
-                    {showPassword ? (
-                      <EyeOff className="h-4 w-4 text-slate-400" />
-                    ) : (
-                      <Eye className="h-4 w-4 text-slate-400" />
-                    )}
+                    Use Demo Credentials
                   </Button>
                 </div>
-              </div>
+              </TabsContent>
 
-              {error && (
-                <Alert variant="destructive">
-                  <AlertDescription>{error}</AlertDescription>
-                </Alert>
-              )}
-
-              <Button
-                type="submit"
-                className={`w-full h-11 ${
-                  userType === "teacher" ? "bg-blue-600 hover:bg-blue-700" : "bg-green-600 hover:bg-green-700"
-                }`}
-                disabled={isLoading}
-              >
-                {isLoading ? "Signing In..." : "Sign In"}
-              </Button>
-            </form>
-
-            <div className="mt-6 text-center text-sm text-slate-600">
-              <p>Demo Credentials:</p>
-              {userType === "teacher" ? (
-                <p className="font-mono text-xs mt-1">
-                  Email: teacher@school.edu
-                  <br />
-                  Password: password123
-                </p>
-              ) : (
-                <p className="font-mono text-xs mt-1">
-                  Student ID: STU001
-                  <br />
-                  Password: student123
-                </p>
-              )}
-            </div>
+              {/* Student Login */}
+              <TabsContent value="student" className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="student-id">Student ID</Label>
+                  <Input
+                    id="student-id"
+                    placeholder="STU001"
+                    value={studentCredentials.studentId}
+                    onChange={(e) => setStudentCredentials((prev) => ({ ...prev, studentId: e.target.value }))}
+                    className="h-11"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="student-password">Password</Label>
+                  <div className="relative">
+                    <Input
+                      id="student-password"
+                      type={showStudentPassword ? "text" : "password"}
+                      placeholder="Enter your password"
+                      value={studentCredentials.password}
+                      onChange={(e) => setStudentCredentials((prev) => ({ ...prev, password: e.target.value }))}
+                      className="h-11 pr-10"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                      onClick={() => setShowStudentPassword(!showStudentPassword)}
+                    >
+                      {showStudentPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </Button>
+                  </div>
+                </div>
+                <Button
+                  onClick={handleStudentLogin}
+                  className="w-full h-11 bg-green-600 hover:bg-green-700"
+                  disabled={isLoading}
+                >
+                  {isLoading ? "Signing In..." : "Sign In as Student"}
+                </Button>
+                <div className="text-center">
+                  <Button
+                    variant="link"
+                    size="sm"
+                    onClick={() => fillDemoCredentials("student")}
+                    className="text-xs text-green-600 hover:text-green-700"
+                  >
+                    Use Demo Credentials
+                  </Button>
+                </div>
+              </TabsContent>
+            </Tabs>
           </CardContent>
         </Card>
-      </div>
+
+        {/* Demo Credentials Info */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.8 }}
+          className="mt-6 p-4 bg-white/80 dark:bg-gray-800/80 rounded-lg backdrop-blur-sm"
+        >
+          <h3 className="font-semibold text-sm mb-2">Demo Credentials:</h3>
+          <div className="text-xs space-y-1 text-gray-600 dark:text-gray-400">
+            <p>
+              <strong>Teacher:</strong> teacher@school.edu / password123
+            </p>
+            <p>
+              <strong>Student:</strong> STU001 / student123
+            </p>
+          </div>
+        </motion.div>
+      </motion.div>
     </div>
   )
 }
