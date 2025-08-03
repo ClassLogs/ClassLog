@@ -1,13 +1,26 @@
 "use client"
 
+import type React from "react"
+
 import { useState, useEffect, useRef, useCallback } from "react"
-import { Camera, RotateCcw, RefreshCw, CheckCircle, XCircle, Monitor, Square, Loader2, Info, Mic } from "lucide-react"
+import {
+  Camera,
+  RotateCcw,
+  RefreshCw,
+  CheckCircle,
+  XCircle,
+  Monitor,
+  Square,
+  Loader2,
+  Mic,
+  PlayCircle,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
 import { motion, AnimatePresence } from "framer-motion"
-import jsQR from "jsqr"
+import jsQR from "jsQR"
 
 interface QRScannerProps {
   onScanSuccess?: (result: string) => void
@@ -50,6 +63,9 @@ export function QRScanner({
   const [cameraStartupError, setCameraStartupError] = useState<string | null>(null)
   const [mediaStreamStatus, setMediaStreamStatus] = useState<MediaStreamStatus>("idle")
   const [retryCount, setRetryCount] = useState(0) // New state for retry count
+  const [videoReadyState, setVideoReadyState] = useState(0) // New state for video readyState
+  const [isPlaying, setIsPlaying] = useState(false) // New state to track if video is actually playing
+  const [videoElementError, setVideoElementError] = useState<MediaError | null>(null) // New state for video element errors
 
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -169,6 +185,8 @@ export function QRScanner({
     setCameraStartupError(null)
     setError(null)
     setMediaStreamStatus(attempt > 1 ? "retrying_stream" : "requesting_permissions")
+    setVideoElementError(null) // Clear previous video element errors
+    setIsPlaying(false) // Reset playing state
     try {
       if (stream) {
         console.log("startCamera: Stopping existing stream before starting new one.")
@@ -187,79 +205,18 @@ export function QRScanner({
 
       setMicrophonePermissionGranted(newStream.getAudioTracks().length > 0)
 
-      if (videoRef.current) {
-        videoRef.current.srcObject = newStream
-        setStream(newStream)
+      setStream(newStream) // Set stream immediately
+      // setIsScanning(true) // Removed: isScanning will be set in handleVideoCanPlay
+      setMediaStreamStatus("stream_active") // Set status to active immediately
+      setRetryCount(0) // Reset retry count on success
+      setCameraInitializing(false) // Explicitly set to false on success
 
-        const videoElement = videoRef.current!
-
-        const playVideo = async () => {
-          try {
-            console.log("startCamera: Attempting to play video element.")
-            await videoElement.play()
-            console.log("startCamera: Video started playing successfully.")
-            setIsScanning(true)
-            setMediaStreamStatus("stream_active")
-            setRetryCount(0) // Reset retry count on success
-            toast({
-              title: "Camera Started",
-              description: `Using ${cameraFacing === "environment" ? "back" : "front"} camera`,
-            })
-          } catch (playErr: any) {
-            console.error("startCamera: Error playing video:", playErr)
-            const errorMessage = `Failed to play video stream: ${playErr.message || playErr.name}. This might be due to browser autoplay policies or camera being in use.`
-            setError(errorMessage)
-            setCameraStartupError(errorMessage)
-            setIsScanning(false)
-            setMediaStreamStatus("stream_error")
-            toast({
-              title: "Camera Playback Error",
-              description: errorMessage,
-              variant: "destructive",
-            })
-            if (attempt < MAX_RETRIES) {
-              console.log(`startCamera: Retrying video playback in 1 second... (Attempt ${attempt + 1})`)
-              setTimeout(() => startCamera(attempt + 1), 1000)
-            } else {
-              console.error("startCamera: Max retries reached for video playback.")
-              setCameraInitializing(false)
-            }
-          } finally {
-            if (attempt >= MAX_RETRIES || isScanning) {
-              // Only set false if max retries reached or successful
-              setCameraInitializing(false)
-            }
-          }
-        }
-
-        if (videoElement.readyState >= 2) {
-          console.log("startCamera: Video already loaded (readyState >= 2), attempting to play.")
-          playVideo()
-        } else {
-          console.log("startCamera: Video not yet loaded, waiting for onloadedmetadata.")
-          videoElement.onloadedmetadata = () => {
-            console.log("startCamera: Video metadata loaded, attempting to play.")
-            playVideo()
-          }
-          videoElement.onerror = (event) => {
-            console.error("startCamera: Video element error during metadata load:", event, videoElement.error)
-            const errorMessage = `Video element encountered an error: ${videoElement.error?.message || "Unknown error"}`
-            setError(errorMessage)
-            setCameraStartupError(errorMessage)
-            setCameraInitializing(false)
-            setIsScanning(false)
-            setMediaStreamStatus("stream_error")
-            toast({
-              title: "Video Error",
-              description: errorMessage,
-              variant: "destructive",
-            })
-          }
-        }
-      }
+      toast({
+        title: "Camera Started",
+        description: `Using ${cameraFacing === "environment" ? "back" : "front"} camera`,
+      })
     } catch (err: any) {
       console.error("startCamera: Error starting camera (getUserMedia failed):", err)
-      setIsScanning(false)
       const errorMessage =
         err.name === "NotAllowedError" || err.name === "PermissionDeniedError"
           ? "Camera and/or microphone access denied. Please grant permission in your browser settings."
@@ -278,16 +235,78 @@ export function QRScanner({
         description: errorMessage,
         variant: "destructive",
       })
+      setCameraInitializing(false) // Explicitly set to false on error
 
       if (attempt < MAX_RETRIES && (err.name === "NotReadableError" || err.name === "OverconstrainedError")) {
         console.log(`startCamera: Retrying getUserMedia in 1 second... (Attempt ${attempt + 1})`)
         setTimeout(() => startCamera(attempt + 1), 1000)
       } else {
         console.error("startCamera: Max retries reached for getUserMedia or unrecoverable error.")
-        setCameraInitializing(false)
       }
     }
   }
+
+  // Effect to handle video playback when stream is available and its cleanup
+  useEffect(() => {
+    if (stream && videoRef.current) {
+      videoRef.current.srcObject = stream
+      console.log("useEffect[stream]: Video srcObject set.")
+
+      return () => {
+        console.log("useEffect[stream] cleanup: Stopping stream tracks and clearing srcObject.")
+        if (stream) {
+          stream.getTracks().forEach((track) => track.stop())
+        }
+        if (videoRef.current) {
+          videoRef.current.srcObject = null
+          videoRef.current.oncanplay = null // Clear listeners
+          videoRef.current.onerror = null
+        }
+      }
+    } else if (!stream && videoRef.current) {
+      // If stream becomes null (e.g., by stopCamera), ensure video element is cleared
+      videoRef.current.srcObject = null
+      videoRef.current.oncanplay = null
+      videoRef.current.onerror = null
+      console.log("useEffect[stream]: Stream became null, cleared video srcObject.")
+    }
+  }, [stream])
+
+  const handleVideoCanPlay = useCallback(() => {
+    if (videoRef.current && stream) {
+      console.log("Video onCanPlay event fired. ReadyState:", videoRef.current.readyState)
+      setVideoReadyState(videoRef.current.readyState)
+      videoRef.current
+        .play()
+        .then(() => {
+          console.log("onCanPlay: Video play() initiated successfully.")
+          setIsPlaying(true)
+          setIsScanning(true) // Set isScanning to true when video is actually playing
+        })
+        .catch((err) => {
+          console.error("onCanPlay: Error attempting to play video:", err)
+          setIsPlaying(false)
+          // This error might occur if autoplay is blocked. The "Click to Play" overlay will handle this.
+        })
+    }
+  }, [stream])
+
+  const handleVideoError = useCallback(
+    (e: React.SyntheticEvent<HTMLVideoElement, Event>) => {
+      const videoElement = e.currentTarget
+      console.error("Video onError event fired:", videoElement.error)
+      setVideoReadyState(-1) // Indicate error state
+      setVideoElementError(videoElement.error)
+      setIsPlaying(false)
+      setError(`Video playback error: ${videoElement.error?.message || videoElement.error?.code}`)
+      toast({
+        title: "Video Playback Error",
+        description: `Code: ${videoElement.error?.code}, Message: ${videoElement.error?.message}`,
+        variant: "destructive",
+      })
+    },
+    [toast],
+  )
 
   const stopCamera = useCallback(() => {
     console.log("stopCamera: Stopping camera and scanning.")
@@ -297,63 +316,67 @@ export function QRScanner({
       console.log("stopCamera: QR scanning interval stopped.")
     }
 
-    if (stream) {
-      console.log("stopCamera: Stopping media stream tracks.")
-      stream.getTracks().forEach((track) => track.stop())
-      setStream(null)
-    }
-
-    if (videoRef.current) {
-      videoRef.current.srcObject = null
-      videoRef.current.onloadedmetadata = null
-      videoRef.current.onerror = null
-      console.log("stopCamera: Video element srcObject cleared.")
-    }
+    // Set stream to null to trigger the useEffect[stream] cleanup
+    setStream(null)
 
     setIsScanning(false)
     setMediaStreamStatus("idle")
     setRetryCount(0) // Reset retry count
+    setVideoReadyState(0) // Reset video ready state
+    setIsPlaying(false) // Reset playing state
+    setVideoElementError(null) // Clear video element errors
     console.log("stopCamera: Camera stopped.")
-  }, [stream])
+  }, []) // Removed stream from dependencies, as setStream(null) handles it.
 
-  useEffect(() => {
-    if (isScanning) {
-      startQRScanning()
-    } else {
-      if (scanIntervalRef.current) {
-        clearInterval(scanIntervalRef.current)
-        scanIntervalRef.current = null
-        console.log("useEffect[isScanning]: QR scanning interval cleared due to isScanning being false.")
+  const handleScanSuccess = useCallback(
+    async (decodedText: string) => {
+      console.log("handleScanSuccess: QR Code detected:", decodedText)
+      setScanResult(decodedText)
+      setIsProcessing(true)
+
+      stopCamera() // Stop camera after successful scan
+
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 1500))
+
+        const mockSuccess = Math.random() > 0.2
+
+        if (mockSuccess) {
+          toast({
+            title: "Attendance Marked!",
+            description: "Your attendance has been successfully recorded.",
+          })
+          onScanSuccess?.(decodedText)
+        } else {
+          throw new Error("Mock API failure")
+        }
+      } catch (error) {
+        console.error("handleScanSuccess: API call failed:", error)
+        toast({
+          title: "Scan Failed",
+          description: "Failed to mark attendance. Please try again.",
+          variant: "destructive",
+        })
+        onScanError?.("API call failed")
+      } finally {
+        setIsProcessing(false)
+
+        setTimeout(() => {
+          setScanResult(null)
+        }, 3000)
       }
-    }
-    return () => {
-      if (scanIntervalRef.current) {
-        clearInterval(scanIntervalRef.current)
-        scanIntervalRef.current = null
-      }
-    }
-  }, [isScanning])
+    },
+    [toast, onScanSuccess, onScanError, stopCamera], // Added stopCamera to dependencies
+  )
 
-  const startQRScanning = () => {
-    console.log("startQRScanning: Starting QR scanning interval.")
-    if (scanIntervalRef.current) {
-      clearInterval(scanIntervalRef.current)
-    }
-
-    scanIntervalRef.current = setInterval(() => {
-      scanForQR()
-    }, 200)
-  }
-
-  const scanForQR = () => {
-    if (!videoRef.current || !canvasRef.current || !isScanning) return
+  const scanForQR = useCallback(() => {
+    if (!videoRef.current || !canvasRef.current || !isScanning || !isPlaying) return // Only scan if video is playing
 
     const video = videoRef.current
     const canvas = canvasRef.current
     const context = canvas.getContext("2d")
 
     if (!context || video.readyState !== video.HAVE_ENOUGH_DATA || video.paused || video.ended) {
-      // console.log("scanForQR: Video not ready for scanning. State:", video.readyState, "Paused:", video.paused, "Ended:", video.ended);
       return
     }
 
@@ -374,48 +397,44 @@ export function QRScanner({
     } else {
       // console.log("scanForQR: No QR code found.");
     }
-  }
+  }, [isScanning, isPlaying, handleScanSuccess])
 
-  const handleScanSuccess = async (decodedText: string) => {
-    console.log("handleScanSuccess: QR Code detected:", decodedText)
-    setScanResult(decodedText)
-    setIsProcessing(true)
-
-    stopCamera()
-
-    try {
-      await new Promise((resolve) => setTimeout(resolve, 1500))
-
-      const mockSuccess = Math.random() > 0.2
-
-      if (mockSuccess) {
-        toast({
-          title: "Attendance Marked!",
-          description: "Your attendance has been successfully recorded.",
-        })
-        onScanSuccess?.(decodedText)
-      } else {
-        throw new Error("Mock API failure")
-      }
-    } catch (error) {
-      console.error("handleScanSuccess: API call failed:", error)
-      toast({
-        title: "Scan Failed",
-        description: "Failed to mark attendance. Please try again.",
-        variant: "destructive",
-      })
-      onScanError?.("API call failed")
-    } finally {
-      setIsProcessing(false)
-
-      setTimeout(() => {
-        setScanResult(null)
-      }, 3000)
+  const startQRScanning = useCallback(() => {
+    console.log("startQRScanning: Starting QR scanning interval.")
+    if (scanIntervalRef.current) {
+      clearInterval(scanIntervalRef.current)
     }
-  }
 
-  const flipCamera = async () => {
-    console.log("flipCamera: Attempting to flip camera.")
+    scanIntervalRef.current = setInterval(() => {
+      scanForQR()
+    }, 200)
+  }, [scanForQR])
+
+  // Effect to manage QR scanning interval based on isScanning
+  useEffect(() => {
+    let interval: NodeJS.Timeout | null = null
+
+    if (isScanning) {
+      interval = setInterval(() => {
+        scanForQR()
+      }, 200)
+    } else {
+      if (interval) {
+        clearInterval(interval)
+        interval = null
+        console.log("useEffect[isScanning]: QR scanning interval cleared due to isScanning being false.")
+      }
+    }
+
+    return () => {
+      if (interval) {
+        clearInterval(interval)
+      }
+    }
+  }, [isScanning, scanForQR])
+
+  const flipCamera = useCallback(async () => {
+    console.log("flipCamera: Attempting to flip camera. Current isScanning:", isScanning, "isPlaying:", isPlaying)
     if (availableCameras.length < 2) {
       toast({
         title: "Camera Flip Unavailable",
@@ -428,19 +447,23 @@ export function QRScanner({
     setCameraInitializing(true)
     setCameraStartupError(null)
     setMediaStreamStatus("initializing_devices")
+    setIsPlaying(false) // Reset playing state during flip
     try {
       const wasScanning = isScanning
+      console.log("flipCamera: wasScanning before stopCamera:", wasScanning)
 
       if (wasScanning) {
         stopCamera()
+        console.log("flipCamera: Camera stopped for flip. isScanning after stopCamera:", isScanning)
         await new Promise((resolve) => setTimeout(resolve, 500))
+        console.log("flipCamera: Delay finished.")
       }
 
       const currentIndex = availableCameras.findIndex((cam) => cam.deviceId === currentCameraId)
       const nextIndex = (currentIndex + 1) % availableCameras.length
       const nextCamera = availableCameras[nextIndex]
 
-      console.log("flipCamera: Current:", currentCameraId, "Next:", nextCamera.deviceId)
+      console.log("flipCamera: Current camera ID:", currentCameraId, "Next camera ID:", nextCamera.deviceId)
 
       setCurrentCameraId(nextCamera.deviceId)
 
@@ -458,6 +481,7 @@ export function QRScanner({
       })
 
       if (wasScanning) {
+        console.log("flipCamera: Attempting to restart camera after flip.")
         setTimeout(() => {
           startCamera()
         }, 500)
@@ -475,29 +499,34 @@ export function QRScanner({
       })
     } finally {
       setCameraInitializing(false)
+      console.log("flipCamera: Finished flipCamera process.")
     }
-  }
+  }, [availableCameras, currentCameraId, isScanning, stopCamera, setCurrentCameraId, setCameraFacing, toast]) // Removed startCamera from dependencies
 
-  const resetScanner = () => {
+  const resetScanner = useCallback(() => {
     console.log("resetScanner: Resetting scanner state.")
     setScanResult(null)
     setError(null)
     setCameraStartupError(null)
     setIsProcessing(false)
     setRetryCount(0) // Reset retry count
+    setVideoReadyState(0) // Reset video ready state
+    setIsPlaying(false) // Reset playing state
+    setVideoElementError(null) // Clear video element errors
 
     if (isScanning) {
       stopCamera()
     }
     setMediaStreamStatus("idle")
-  }
+  }, [isScanning, stopCamera])
 
-  const demoScan = () => {
-    console.log("demoScan: Initiating demo scan.")
-    if (!isScanning) {
+  const demoScan = useCallback(() => {
+    console.log("demoScan: Initiating demo scan. Current isScanning:", isScanning, "isPlaying:", isPlaying)
+    if (!isScanning || !isPlaying) {
+      // Added !isPlaying check
       toast({
         title: "Start Camera First",
-        description: "Please start the camera before demo scanning.",
+        description: "Please start the camera and ensure it's playing before demo scanning.",
         variant: "destructive",
       })
       return
@@ -505,13 +534,27 @@ export function QRScanner({
 
     const mockQRData = `DEMO-QR-${Date.now()}-${Math.random().toString(36).substring(7)}`
     handleScanSuccess(mockQRData)
-  }
+  }, [isScanning, isPlaying, handleScanSuccess, toast])
 
-  useEffect(() => {
-    return () => {
-      stopCamera()
+  const handlePlayButtonClick = useCallback(() => {
+    if (videoRef.current) {
+      videoRef.current
+        .play()
+        .then(() => {
+          console.log("User initiated play() successful.")
+          setIsPlaying(true)
+        })
+        .catch((err) => {
+          console.error("User initiated play() failed:", err)
+          setError(`Failed to play video: ${err.message || err.name}. Please check browser settings.`)
+          toast({
+            title: "Video Playback Failed",
+            description: "Browser blocked autoplay. Please check console for details.",
+            variant: "destructive",
+          })
+        })
     }
-  }, [stopCamera])
+  }, [toast])
 
   return (
     <div className={`w-full max-w-md mx-auto ${className}`}>
@@ -542,13 +585,14 @@ export function QRScanner({
                   {microphonePermissionGranted ? "Mic On" : "Mic Off"}
                 </Badge>
               )}
-              {isScanning && (
-                <motion.div
-                  animate={{ scale: [1, 1.2, 1] }}
-                  transition={{ duration: 1.5, repeat: Number.POSITIVE_INFINITY }}
-                  className="w-2 h-2 bg-red-500 rounded-full ml-2"
-                />
-              )}
+              {isScanning &&
+                isPlaying && ( // Only show scanning indicator if video is playing
+                  <motion.div
+                    animate={{ scale: [1, 1.2, 1] }}
+                    transition={{ duration: 1.5, repeat: Number.POSITIVE_INFINITY }}
+                    className="w-2 h-2 bg-red-500 rounded-full ml-2"
+                  />
+                )}
             </div>
           </div>
 
@@ -561,14 +605,16 @@ export function QRScanner({
                 autoPlay
                 playsInline
                 muted
-                className={`w-full h-full object-cover ${!isScanning && !cameraInitializing ? "hidden" : ""}`}
+                className="w-full h-full object-cover" // Removed conditional hidden class
+                onCanPlay={handleVideoCanPlay}
+                onError={handleVideoError}
               />
 
               {/* Hidden Canvas for QR Processing */}
               <canvas ref={canvasRef} className="hidden" />
 
-              {/* Placeholder when not scanning */}
-              {!isScanning && !scanResult && !cameraInitializing && (
+              {/* Placeholder when not scanning and not initializing */}
+              {!stream && !cameraInitializing && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-4">
                   <Camera className="w-12 h-12 text-gray-400 mb-3" />
                   <p className="text-gray-500 text-sm mb-1">Camera not active</p>
@@ -587,26 +633,39 @@ export function QRScanner({
                 </div>
               )}
 
-              {/* Scanning Frame Overlay */}
-              {isScanning && (
-                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                  <div className="w-64 h-64 border-2 border-white rounded-lg relative">
-                    {/* Corner indicators */}
-                    <div className="absolute top-0 left-0 w-6 h-6 border-t-4 border-l-4 border-blue-400 rounded-tl-lg"></div>
-                    <div className="absolute top-0 right-0 w-6 h-6 border-t-4 border-r-4 border-blue-400 rounded-tr-lg"></div>
-                    <div className="absolute bottom-0 left-0 w-6 h-6 border-b-4 border-l-4 border-blue-400 rounded-bl-lg"></div>
-                    <div className="absolute bottom-0 right-0 w-6 h-6 border-b-4 border-r-4 border-blue-400 rounded-br-lg"></div>
-
-                    {/* Scanning line animation */}
-                    <motion.div
-                      initial={{ y: -100 }}
-                      animate={{ y: 100 }}
-                      transition={{ duration: 2, repeat: Number.POSITIVE_INFINITY, ease: "linear" }}
-                      className="absolute left-0 right-0 h-0.5 bg-blue-400 shadow-lg shadow-blue-400/50"
-                    />
-                  </div>
+              {/* "Click to Play" Overlay */}
+              {stream && !isPlaying && !cameraInitializing && videoReadyState >= 3 && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-4 bg-black/60 text-white rounded-lg">
+                  <PlayCircle className="w-12 h-12 text-white mb-3" />
+                  <p className="text-lg font-bold mb-2">Video Blocked</p>
+                  <p className="text-sm mb-4">Click to play camera feed</p>
+                  <Button onClick={handlePlayButtonClick} size="sm" className="bg-blue-600 hover:bg-blue-700">
+                    <PlayCircle className="w-4 h-4 mr-2" /> Play Video
+                  </Button>
                 </div>
               )}
+
+              {/* Scanning Frame Overlay */}
+              {isScanning &&
+                isPlaying && ( // Only show scanning frame if video is playing
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                    <div className="w-64 h-64 border-2 border-white rounded-lg relative">
+                      {/* Corner indicators */}
+                      <div className="absolute top-0 left-0 w-6 h-6 border-t-4 border-l-4 border-blue-400 rounded-tl-lg"></div>
+                      <div className="absolute top-0 right-0 w-6 h-6 border-t-4 border-r-4 border-blue-400 rounded-tr-lg"></div>
+                      <div className="absolute bottom-0 left-0 w-6 h-6 border-b-4 border-l-4 border-blue-400 rounded-bl-lg"></div>
+                      <div className="absolute bottom-0 right-0 w-6 h-6 border-b-4 border-r-4 border-blue-400 rounded-br-lg"></div>
+
+                      {/* Scanning line animation */}
+                      <motion.div
+                        initial={{ y: -100 }}
+                        animate={{ y: 100 }}
+                        transition={{ duration: 2, repeat: Number.POSITIVE_INFINITY, ease: "linear" }}
+                        className="absolute left-0 right-0 h-0.5 bg-blue-400 shadow-lg shadow-blue-400/50"
+                      />
+                    </div>
+                  </div>
+                )}
 
               {/* Scan Result Overlay */}
               <AnimatePresence>
@@ -713,13 +772,18 @@ export function QRScanner({
                 onClick={flipCamera}
                 variant="outline"
                 className="flex-1 h-10 bg-transparent"
-                disabled={!cameraPermissionGranted || availableCameras.length < 2 || cameraInitializing}
+                disabled={!isScanning || !isPlaying || availableCameras.length < 2 || cameraInitializing}
               >
                 <RotateCcw className="w-4 h-4 mr-2" />
                 Flip Camera
               </Button>
 
-              <Button onClick={demoScan} variant="outline" className="flex-1 h-10 bg-transparent">
+              <Button
+                onClick={demoScan}
+                variant="outline"
+                className="flex-1 h-10 bg-transparent"
+                disabled={!isScanning || !isPlaying}
+              >
                 <CheckCircle className="w-4 h-4 mr-2" />
                 Demo Scan
               </Button>
@@ -753,48 +817,6 @@ export function QRScanner({
               </div>
             </div>
           )}
-
-          {/* Media Stream Status */}
-          <div className="mt-4 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
-            <h4 className="font-medium text-sm mb-2">Internal Status:</h4>
-            <Badge variant="outline" className="text-xs">
-              Status: {mediaStreamStatus}
-            </Badge>
-          </div>
-
-          {/* Instructions */}
-          <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-            <h4 className="font-medium text-sm mb-2 text-blue-800 dark:text-blue-200">How to use:</h4>
-            <ul className="text-xs space-y-1 text-blue-600 dark:text-blue-300">
-              <li>• Click "Start Camera" to begin</li>
-              <li>• Point camera at QR code</li>
-              <li>• Use "Demo Scan" to test functionality</li>
-              <li>• Use "Flip Camera" to switch cameras</li>
-              {availableCameras.length > 1 && <li>• Multiple cameras detected</li>}
-            </ul>
-          </div>
-
-          {/* Troubleshooting Tips */}
-          <div className="mt-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
-            <h4 className="font-medium text-sm mb-2 text-yellow-800 dark:text-yellow-200 flex items-center gap-2">
-              <Info className="w-4 h-4" /> Troubleshooting Tips:
-            </h4>
-            <ul className="text-xs space-y-1 text-yellow-600 dark:text-yellow-300">
-              <li>
-                • **Check Browser Permissions:** Ensure your browser (Chrome, Firefox, Edge) has explicit permission to
-                access your camera and microphone. Look for a camera/microphone icon in the address bar.
-              </li>
-              <li>
-                • **Close Other Apps:** Make sure no other applications (e.g., Zoom, Google Meet, Discord, other browser
-                tabs) are currently using your camera or microphone.
-              </li>
-              <li>
-                • **Restart Browser/Computer:** Sometimes a simple restart can resolve temporary media access issues.
-              </li>
-              <li>• **Update Drivers:** Ensure your laptop's camera and microphone drivers are up to date.</li>
-              <li>• **Try Another Browser:** Test if the scanner works in a different web browser.</li>
-            </ul>
-          </div>
         </CardContent>
       </Card>
     </div>
