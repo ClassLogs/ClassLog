@@ -93,6 +93,14 @@ export default function TeacherDashboard() {
   const router = useRouter()
   const { toast } = useToast()
 
+  useEffect(() => {
+    const token = localStorage.getItem("studentAuthToken")
+    if (!token) {
+      router.push("/") // redirect to login
+    }
+  }, [])
+
+
   const userName =
     typeof window !== "undefined" ? localStorage.getItem("userName") || "Dr. Sarah Johnson" : "Dr. Sarah Johnson"
 

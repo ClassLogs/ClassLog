@@ -140,20 +140,44 @@ export default function StudentPortal() {
 
   const router = useRouter()
   const { toast } = useToast()
+  
+  useEffect(() => {
+    const token = localStorage.getItem("authToken")
+    if (!token) {
+      router.push("/") // redirect to login if token missing
+    }
+  }, [])
 
   const subjectStats = calculateSubjectStats(attendanceHistory)
-  const userName = typeof window !== "undefined" ? localStorage.getItem("userName") || "John Doe" : "John Doe"
-  const studentId = typeof window !== "undefined" ? localStorage.getItem("studentId") || "STU001" : "STU001"
+  const [userName, setUserName] = useState("")
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const storedName = localStorage.getItem("userName") // ✅ not "name"
+      setUserName(storedName || "John Doe")
+    }
+  }, [])
+
+  const [studentId, setStudentId] = useState("")
+
+useEffect(() => {
+  const storedId = localStorage.getItem("studentId")
+  if (storedId) {
+    setStudentId(storedId)
+  } else {
+    setStudentId("STU001")
+  }
+}, [])
+
 
   // Check authentication
-  useEffect(() => {
-    const token = localStorage.getItem("userToken")
-    const userType = localStorage.getItem("userType")
+useEffect(() => {
+  const token = localStorage.getItem("studentAuthToken")
+  if (!token) {
+    router.push("/")
+  }
+}, [])
 
-    if (!token || userType !== "student") {
-      router.push("/")
-    }
-  }, [router])
 
   // Dynamic Indian Date & Time
   useEffect(() => {
@@ -216,6 +240,15 @@ export default function StudentPortal() {
     { icon: CheckCircle, title: "Success", description: "Attendance marked" },
   ]
 
+const [studentGroup, setStudentGroup] = useState("")
+const [studentSemester, setStudentSemester] = useState("")
+
+useEffect(() => {
+  setStudentGroup(localStorage.getItem("studentGroup") || "Not Assigned")
+  setStudentSemester(localStorage.getItem("studentSemester") || "Not Assigned")
+}, [])
+
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       {/* Header */}
@@ -259,10 +292,11 @@ export default function StudentPortal() {
                       <User className="w-5 h-5" />
                       {studentId}
                     </span>
-                    <span className="flex items-center gap-2">
-                      <Calendar className="w-5 h-5" />
-                      Computer Science - Year 3
-                    </span>
+<span className="flex items-center gap-2">
+  <Calendar className="w-5 h-5" />
+  Semester {studentSemester} - Group {studentGroup}
+</span>
+
                   </div>
                 </div>
                 <Badge variant="secondary" className="bg-white/20 text-white border-white/20">
@@ -556,7 +590,9 @@ export default function StudentPortal() {
                     <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
                       <div>
                         <p className="font-medium">Course</p>
-                        <p className="text-sm text-gray-600 dark:text-gray-400">Computer Science - Year 3</p>
+<p className="text-sm text-gray-600 dark:text-gray-400">
+  semester {studentSemester} - Group {studentGroup}
+</p>
                       </div>
                     </div>
                   </div>
