@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { motion } from "framer-motion"
 import {
   QrCode,
@@ -81,10 +81,14 @@ export default function TeacherDashboard() {
   const [selectedClass, setSelectedClass] = useState<ClassData>(classes[0])
   const [sessionActive, setSessionActive] = useState(false)
   const [qrCode, setQrCode] = useState("")
-  const [timeLeft, setTimeLeft] = useState(15)
+  const [timeLeft, setTimeLeft] = useState(10)
   const [studentsPresent, setStudentsPresent] = useState(0)
   const [studentList, setStudentList] = useState<Student[]>(students)
   const [searchTerm, setSearchTerm] = useState("")
+  const [currentDateTime, setCurrentDateTime] = useState("")
+  const [referenceId, setReferenceId] = useState("")
+  const [scannerZoom, setScannerZoom] = useState(false)
+  const qrContainerRef = useRef<HTMLDivElement>(null)
 
   const router = useRouter()
   const { toast } = useToast()
@@ -92,54 +96,80 @@ export default function TeacherDashboard() {
   const userName =
     typeof window !== "undefined" ? localStorage.getItem("userName") || "Dr. Sarah Johnson" : "Dr. Sarah Johnson"
 
-  // Check authentication
   useEffect(() => {
     const token = localStorage.getItem("userToken")
     const userType = localStorage.getItem("userType")
-
     if (!token || userType !== "teacher") {
       router.push("/")
     }
   }, [router])
 
-  const handleLogout = () => {
-    localStorage.removeItem("userToken")
-    localStorage.removeItem("userType")
-    localStorage.removeItem("userName")
+  useEffect(() => {
+    const updateDateTime = () => {
+      const now = new Date()
+      setCurrentDateTime(
+        now.toLocaleString("en-IN", {
+          timeZone: "Asia/Kolkata",
+          weekday: "long",
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          hour12: true,
+        })
+      )
+    }
+    updateDateTime()
+    const interval = setInterval(updateDateTime, 1000)
+    return () => clearInterval(interval)
+  }, [])
 
-    toast({
-      title: "Logged Out",
-      description: "You have been successfully logged out.",
-    })
-
-    router.push("/")
-  }
-
-  // QR Code rotation effect
   useEffect(() => {
     if (sessionActive) {
       const interval = setInterval(() => {
         const sessionId = Math.random().toString(36).substring(7)
         const timestamp = Date.now()
         setQrCode(`${selectedClass.id}-${sessionId}-${timestamp}`)
-        setTimeLeft(15)
-      }, 15000)
-
+        setTimeLeft(10)
+      }, 10000)
       const sessionId = Math.random().toString(36).substring(7)
       const timestamp = Date.now()
       setQrCode(`${selectedClass.id}-${sessionId}-${timestamp}`)
-
       return () => clearInterval(interval)
     }
   }, [sessionActive, selectedClass.id])
 
-  // Timer countdown
+  useEffect(() => {
+    if (sessionActive && qrCode) {
+      setReferenceId(`REF-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`)
+    } else {
+      setReferenceId("")
+    }
+  }, [qrCode, sessionActive])
+
   useEffect(() => {
     if (sessionActive && timeLeft > 0) {
       const timer = setTimeout(() => setTimeLeft(timeLeft - 1), 1000)
       return () => clearTimeout(timer)
     }
   }, [sessionActive, timeLeft])
+
+  const handleScannerZoom = () => {
+    setScannerZoom((prev) => !prev)
+  }
+
+  const handleLogout = () => {
+    localStorage.removeItem("userToken")
+    localStorage.removeItem("userType")
+    localStorage.removeItem("userName")
+    toast({
+      title: "Logged Out",
+      description: "You have been successfully logged out.",
+    })
+    router.push("/")
+  }
 
   const startSession = () => {
     setSessionActive(true)
@@ -153,7 +183,7 @@ export default function TeacherDashboard() {
   const stopSession = () => {
     setSessionActive(false)
     setQrCode("")
-    setTimeLeft(15)
+    setTimeLeft(10)
     toast({
       title: "Session Stopped",
       description: "Attendance session has been ended.",
@@ -172,7 +202,7 @@ export default function TeacherDashboard() {
 
   const toggleAttendance = (studentId: string) => {
     setStudentList((prev) =>
-      prev.map((student) => (student.id === studentId ? { ...student, present: !student.present } : student)),
+      prev.map((student) => (student.id === studentId ? { ...student, present: !student.present } : student))
     )
   }
 
@@ -206,7 +236,6 @@ export default function TeacherDashboard() {
     ]
       .map((row) => row.join(","))
       .join("\n")
-
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
     const link = document.createElement("a")
     const url = URL.createObjectURL(blob)
@@ -216,7 +245,6 @@ export default function TeacherDashboard() {
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
-
     toast({
       title: "Export Successful",
       description: "Attendance data has been exported to CSV file.",
@@ -227,7 +255,7 @@ export default function TeacherDashboard() {
     (student) =>
       student.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       student.rollNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      student.studentId.toLowerCase().includes(searchTerm.toLowerCase()),
+      student.studentId.toLowerCase().includes(searchTerm.toLowerCase())
   )
 
   const presentCount = studentList.filter((s) => s.present).length
@@ -247,10 +275,9 @@ export default function TeacherDashboard() {
                 <p className="text-sm text-gray-600 dark:text-gray-400">Attendance Management</p>
               </div>
             </div>
-
             <div className="flex items-center gap-4">
               <div className="hidden md:block text-sm text-gray-600 dark:text-gray-400">
-                Saturday, August 2, 2025 • 09:06:37 AM
+                {currentDateTime}
               </div>
               <ThemeToggle />
               <Button variant="outline" size="sm" onClick={handleLogout}>
@@ -261,7 +288,6 @@ export default function TeacherDashboard() {
           </div>
         </div>
       </header>
-
       <div className="container mx-auto px-4 py-8">
         {/* Welcome Panel */}
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
@@ -288,7 +314,6 @@ export default function TeacherDashboard() {
             </CardContent>
           </Card>
         </motion.div>
-
         {/* Class Selection */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -308,7 +333,6 @@ export default function TeacherDashboard() {
                     <p className="text-gray-600 dark:text-gray-400">Data Structures & Object Oriented Programming</p>
                   </div>
                 </div>
-
                 <div className="flex items-center gap-4">
                   <div className="text-right">
                     <label className="text-sm font-medium">Select Class</label>
@@ -331,7 +355,6 @@ export default function TeacherDashboard() {
                       </SelectContent>
                     </Select>
                   </div>
-
                   <div className="flex gap-2">
                     <Badge variant="outline">{selectedClass.subject}</Badge>
                     <Badge variant="secondary">{selectedClass.name}</Badge>
@@ -341,7 +364,6 @@ export default function TeacherDashboard() {
             </CardContent>
           </Card>
         </motion.div>
-
         {/* Main Dashboard Tabs */}
         <Tabs defaultValue="qr-session" className="w-full">
           <TabsList className="grid w-full grid-cols-4 mb-8">
@@ -362,7 +384,6 @@ export default function TeacherDashboard() {
               Settings
             </TabsTrigger>
           </TabsList>
-
           {/* QR Session Tab */}
           <TabsContent value="qr-session" className="space-y-6">
             <div className="grid lg:grid-cols-2 gap-8">
@@ -388,36 +409,51 @@ export default function TeacherDashboard() {
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-6">
-                    <div className="flex justify-center">
-                      <div className="relative">
-                        <motion.div
-                          key={qrCode}
-                          initial={{ scale: 0.8, opacity: 0 }}
-                          animate={{ scale: 1, opacity: 1 }}
-                          transition={{ duration: 0.3 }}
-                          className="p-6 bg-white dark:bg-gray-100 rounded-lg border-2 border-blue-200 dark:border-blue-300 shadow-lg"
-                        >
-                          {sessionActive && qrCode ? (
-                            <QRCodeSVG value={qrCode} size={200} level="M" includeMargin />
-                          ) : (
-                            <div className="w-[200px] h-[200px] flex items-center justify-center bg-gray-100 dark:bg-gray-800 rounded">
-                              <QrCode className="w-16 h-16 text-gray-400" />
-                            </div>
-                          )}
-                        </motion.div>
-
-                        {sessionActive && (
-                          <motion.div
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            className="absolute -bottom-2 -right-2 bg-blue-500 text-white rounded-full w-10 h-10 flex items-center justify-center text-sm font-bold shadow-lg"
+                    <div
+                      ref={qrContainerRef}
+                      className={`relative flex flex-col items-center transition-all duration-300 ${
+                        scannerZoom ? "z-50 bg-white dark:bg-gray-900 p-8 rounded-xl shadow-2xl scale-125" : ""
+                      }`}
+                      style={scannerZoom ? { position: "relative" } : {}}
+                    >
+                      <motion.div
+                        key={qrCode}
+                        initial={{ scale: 0.8, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        transition={{ duration: 0.3 }}
+                        className="cursor-pointer"
+                        onClick={handleScannerZoom}
+                      >
+                        {sessionActive && qrCode ? (
+                          <QRCodeSVG value={qrCode} size={scannerZoom ? 350 : 200} level="M" includeMargin />
+                        ) : (
+                          <div
+                            className={`flex items-center justify-center bg-gray-100 dark:bg-gray-800 rounded ${
+                              scannerZoom ? "w-[350px] h-[350px]" : "w-[200px] h-[200px]"
+                            }`}
                           >
-                            {timeLeft}
-                          </motion.div>
+                            <QrCode className={scannerZoom ? "w-32 h-32 text-gray-400" : "w-16 h-16 text-gray-400"} />
+                          </div>
                         )}
-                      </div>
+                      </motion.div>
+                      {/* Ref ID below scanner */}
+                      {sessionActive && referenceId && (
+                        <div className="mt-4 mb-2 flex items-center justify-center w-full">
+                          <Badge variant="secondary" className="text-xs">
+                            Ref ID: {referenceId}
+                          </Badge>
+                        </div>
+                      )}
+                      {sessionActive && (
+                        <motion.div
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          className="absolute -bottom-2 -right-2 bg-blue-500 text-white rounded-full w-10 h-10 flex items-center justify-center text-sm font-bold shadow-lg"
+                        >
+                          {timeLeft}
+                        </motion.div>
+                      )}
                     </div>
-
                     <div className="flex gap-3">
                       {!sessionActive ? (
                         <Button onClick={startSession} className="flex-1 bg-green-600 hover:bg-green-700 h-12">
@@ -435,7 +471,6 @@ export default function TeacherDashboard() {
                         Demo Scan
                       </Button>
                     </div>
-
                     {sessionActive && (
                       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
                         <div className="flex justify-between text-sm">
@@ -445,12 +480,11 @@ export default function TeacherDashboard() {
                           </span>
                         </div>
                         <Progress value={(studentsPresent / selectedClass.students) * 100} className="h-3" />
-
                         <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
                           <h4 className="font-medium mb-2">Session Instructions:</h4>
                           <ul className="text-sm space-y-1 text-gray-600 dark:text-gray-400">
                             <li>• Students scan QR code to mark attendance</li>
-                            <li>• QR code updates every 15 seconds for security</li>
+                            <li>• QR code updates every 10 seconds for security</li>
                             <li>
                               • Attendance recorded for {selectedClass.subject} - {selectedClass.name}
                             </li>
@@ -463,7 +497,6 @@ export default function TeacherDashboard() {
                   </CardContent>
                 </Card>
               </motion.div>
-
               {/* Session Analytics */}
               <motion.div
                 initial={{ opacity: 0, x: 20 }}
@@ -487,7 +520,6 @@ export default function TeacherDashboard() {
                         <span className="text-sm font-medium">{selectedClass.name} Performance</span>
                         <TrendingUp className="w-4 h-4 text-green-500" />
                       </div>
-
                       <div className="grid grid-cols-3 gap-4 text-center">
                         <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
                           <div className="text-2xl font-bold text-green-600">85%</div>
@@ -505,7 +537,6 @@ export default function TeacherDashboard() {
                     </div>
                   </CardContent>
                 </Card>
-
                 <Card className="shadow-lg">
                   <CardHeader>
                     <div className="flex items-center justify-between">
@@ -544,7 +575,6 @@ export default function TeacherDashboard() {
               </motion.div>
             </div>
           </TabsContent>
-
           {/* Manual Attendance Tab */}
           <TabsContent value="manual-attendance" className="space-y-6">
             <div className="grid lg:grid-cols-3 gap-8">
@@ -582,7 +612,6 @@ export default function TeacherDashboard() {
                         />
                       </div>
                     </div>
-
                     <div className="space-y-3">
                       {filteredStudents.map((student, index) => (
                         <motion.div
@@ -598,7 +627,6 @@ export default function TeacherDashboard() {
                               {student.rollNumber} • {student.studentId}
                             </div>
                           </div>
-
                           <Button
                             onClick={() => toggleAttendance(student.id)}
                             variant={student.present ? "default" : "outline"}
@@ -622,7 +650,6 @@ export default function TeacherDashboard() {
                   </CardContent>
                 </Card>
               </div>
-
               <div className="space-y-6">
                 <Card className="shadow-lg">
                   <CardHeader>
@@ -654,7 +681,6 @@ export default function TeacherDashboard() {
                     </div>
                   </CardContent>
                 </Card>
-
                 <Card className="shadow-lg">
                   <CardHeader>
                     <CardTitle>Manual Attendance Guidelines</CardTitle>
@@ -673,7 +699,6 @@ export default function TeacherDashboard() {
               </div>
             </div>
           </TabsContent>
-
           {/* Analytics Tab */}
           <TabsContent value="analytics" className="space-y-6">
             <div className="grid lg:grid-cols-2 gap-8">
@@ -704,7 +729,6 @@ export default function TeacherDashboard() {
                   </div>
                 </CardContent>
               </Card>
-
               <Card className="shadow-lg">
                 <CardHeader>
                   <CardTitle>Export Options</CardTitle>
@@ -735,7 +759,6 @@ export default function TeacherDashboard() {
               </Card>
             </div>
           </TabsContent>
-
           {/* Settings Tab */}
           <TabsContent value="settings" className="space-y-6">
             <div className="grid md:grid-cols-2 gap-8">
@@ -770,7 +793,6 @@ export default function TeacherDashboard() {
                   </div>
                 </CardContent>
               </Card>
-
               <Card className="shadow-lg">
                 <CardHeader>
                   <CardTitle>Quick Actions</CardTitle>

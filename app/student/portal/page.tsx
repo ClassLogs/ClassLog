@@ -136,6 +136,7 @@ const calculateSubjectStats = (records: AttendanceRecord[]): SubjectStats[] => {
 
 export default function StudentPortal() {
   const [currentStep, setCurrentStep] = useState(0)
+  const [currentDateTime, setCurrentDateTime] = useState("")
 
   const router = useRouter()
   const { toast } = useToast()
@@ -153,6 +154,29 @@ export default function StudentPortal() {
       router.push("/")
     }
   }, [router])
+
+  // Dynamic Indian Date & Time
+  useEffect(() => {
+    const updateDateTime = () => {
+      const now = new Date()
+      setCurrentDateTime(
+        now.toLocaleString("en-IN", {
+          timeZone: "Asia/Kolkata",
+          weekday: "long",
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          hour12: true,
+        })
+      )
+    }
+    updateDateTime()
+    const interval = setInterval(updateDateTime, 1000)
+    return () => clearInterval(interval)
+  }, [])
 
   const handleLogout = () => {
     localStorage.removeItem("userToken")
@@ -210,7 +234,7 @@ export default function StudentPortal() {
 
             <div className="flex items-center gap-4">
               <div className="hidden md:block text-sm text-gray-600 dark:text-gray-400">
-                Saturday, August 2, 2025 • 09:04:20 AM
+                {currentDateTime}
               </div>
               <ThemeToggle />
               <Button variant="outline" size="sm" onClick={handleLogout}>
