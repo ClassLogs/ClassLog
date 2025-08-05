@@ -28,7 +28,6 @@ export async function POST(request: NextRequest) {
         message: "Attendance marked successfully",
         attendanceId: `att_${Date.now()}`,
         studentId,
-        timestamp,
         qrCode: qrCode.substring(0, 20) + "...", // Truncate for security
       })
     } else {
