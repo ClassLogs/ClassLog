@@ -70,7 +70,7 @@ const [API_BASE_URL, setApiBaseUrl] = useState("")
     const baseUrl =
       window.location.hostname === "localhost"
         ? "http://localhost:5000"
-        : "https://your-render-backend.onrender.com"
+        : "https://classlog-e5h3.onrender.com"
 
     setApiBaseUrl(baseUrl)
   }, [])

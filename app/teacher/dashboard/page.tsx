@@ -60,7 +60,7 @@ export interface Student {
 const API_BASE_URL =
   typeof window !== "undefined" && window.location.hostname === "localhost"
     ? "http://localhost:5000"
-    : "https://your-render-backend.onrender.com"; // <-- Apna backend URL daalo
+    : "https://github.com/ClassLogs/ClassLog"; // <-- Apna backend URL daalo
 
 export default function TeacherDashboard() {
   const [classes, setClasses] = useState<ClassData[]>([])
