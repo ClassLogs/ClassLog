@@ -35,6 +35,7 @@ interface AttendanceRecord {
   teacher: string
   status: "present" | "absent" | "late"
   markedAt?: string
+  session_name?: string
 }
 
 interface SubjectStats {
@@ -46,138 +47,33 @@ interface SubjectStats {
   canMiss: number
 }
 
-const attendanceHistory: AttendanceRecord[] = [
-  { id: "1", date: "Aug 2, 2025", time: "10:30", subject: "DSOOPS", teacher: "Dr. Sarah Johnson", status: "absent" },
-  {
-    id: "2",
-    date: "Aug 2, 2025",
-    time: "10:30",
-    subject: "DBMS",
-    teacher: "Prof. Mike Chen",
-    status: "present",
-    markedAt: "10:59",
-  },
-  { id: "3", date: "Aug 2, 2025", time: "9:00", subject: "OOSE", teacher: "Dr. Emily Davis", status: "absent" },
-  {
-    id: "4",
-    date: "Aug 1, 2025",
-    time: "10:00",
-    subject: "DSOOPS",
-    teacher: "Dr. Sarah Johnson",
-    status: "present",
-    markedAt: "12:13",
-  },
-  {
-    id: "5",
-    date: "Aug 1, 2025",
-    time: "10:00",
-    subject: "DBMS",
-    teacher: "Prof. Mike Chen",
-    status: "present",
-    markedAt: "9:44",
-  },
-  {
-    id: "6",
-    date: "Jul 31, 2025",
-    time: "12:30",
-    subject: "OOSE",
-    teacher: "Dr. Emily Davis",
-    status: "present",
-    markedAt: "12:53",
-  },
-  {
-    id: "7",
-    date: "Jul 30, 2025",
-    time: "12:00",
-    subject: "FEE",
-    teacher: "Mr. John Smith",
-    status: "present",
-    markedAt: "9:18",
-  },
-  {
-    id: "8",
-    date: "Jul 29, 2025",
-    time: "10:30",
-    subject: "DSOOPS",
-    teacher: "Dr. Sarah Johnson",
-    status: "present",
-    markedAt: "12:36",
-  },
-]
-
-const calculateSubjectStats = (records: AttendanceRecord[]): SubjectStats[] => {
-  const subjectData: { [key: string]: { total: number; attended: number } } = {}
-
-  records.forEach((record) => {
-    if (!subjectData[record.subject]) {
-      subjectData[record.subject] = { total: 0, attended: 0 }
-    }
-    subjectData[record.subject].total++
-    if (record.status === "present" || record.status === "late") {
-      subjectData[record.subject].attended++
-    }
-  })
-
-  return Object.entries(subjectData).map(([subject, data]) => {
-    const percentage = (data.attended / data.total) * 100
-    const requiredFor75 = Math.max(0, Math.ceil(0.75 * data.total - data.attended))
-    const canMiss = percentage >= 75 ? Math.floor((data.attended - 0.75 * data.total) / 0.75) : 0
-
-    return {
-      subject,
-      totalClasses: data.total,
-      attendedClasses: data.attended,
-      percentage: Math.round(percentage),
-      requiredFor75,
-      canMiss,
-    }
-  })
-}
-
 export default function StudentPortal() {
   const [currentStep, setCurrentStep] = useState(0)
   const [currentDateTime, setCurrentDateTime] = useState("")
+  const [attendanceHistory, setAttendanceHistory] = useState<AttendanceRecord[]>([])
+  const [subjectStats, setSubjectStats] = useState<SubjectStats[]>([])
 
   const router = useRouter()
   const { toast } = useToast()
-  
-  useEffect(() => {
-    const token = localStorage.getItem("authToken")
-    if (!token) {
-      router.push("/") // redirect to login if token missing
-    }
-  }, [])
 
-  const subjectStats = calculateSubjectStats(attendanceHistory)
   const [userName, setUserName] = useState("")
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const storedName = localStorage.getItem("userName") // ✅ not "name"
-      setUserName(storedName || "John Doe")
-    }
-  }, [])
-
   const [studentId, setStudentId] = useState("")
+  const [studentGroup, setStudentGroup] = useState("")
+  const [studentSemester, setStudentSemester] = useState("")
 
-useEffect(() => {
-  const storedId = localStorage.getItem("studentId")
-  if (storedId) {
-    setStudentId(storedId)
-  } else {
-    setStudentId("STU001")
-  }
-}, [])
-
-
-  // Check authentication
-useEffect(() => {
-  const token = localStorage.getItem("studentAuthToken")
-  if (!token) {
-    router.push("/")
-  }
-}, [])
-
+  // Check authentication and load user data
+  useEffect(() => {
+    const token = localStorage.getItem("userToken")
+    const userType = localStorage.getItem("userType")
+    if (!token || userType !== "student") {
+      router.push("/")
+    } else {
+      setUserName(localStorage.getItem("userName") || "Student")
+      setStudentId(localStorage.getItem("studentId") || "N/A")
+      setStudentGroup(localStorage.getItem("studentGroup") || "N/A")
+      setStudentSemester(localStorage.getItem("studentSemester") || "N/A")
+    }
+  }, [router])
 
   // Dynamic Indian Date & Time
   useEffect(() => {
@@ -194,7 +90,7 @@ useEffect(() => {
           minute: "2-digit",
           second: "2-digit",
           hour12: true,
-        })
+        }),
       )
     }
     updateDateTime()
@@ -207,6 +103,8 @@ useEffect(() => {
     localStorage.removeItem("userType")
     localStorage.removeItem("userName")
     localStorage.removeItem("studentId")
+    localStorage.removeItem("studentGroup")
+    localStorage.removeItem("studentSemester")
 
     toast({
       title: "Logged Out",
@@ -216,12 +114,116 @@ useEffect(() => {
     router.push("/")
   }
 
-  const handleScanSuccess = (result: string) => {
-    console.log("QR Scan successful:", result)
-    toast({
-      title: "QR Code Scanned!",
-      description: `Scanned: ${result.substring(0, 20)}...`,
-    })
+  // Fetch student attendance history with total sessions
+  const fetchAttendanceHistory = async () => {
+    if (!studentId || studentId === "N/A") return
+
+    try {
+      const res = await fetch("http://localhost:5000/api/get-student-attendance-with-totals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ studentId }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        // Set attendance history
+        setAttendanceHistory(
+          data.attendance.map((rec: any) => ({
+            id: rec.id?.toString(),
+            date: new Date(rec.date).toLocaleDateString("en-IN"),
+            time: rec.time || "",
+            subject: rec.subject || "N/A",
+            teacher: rec.teacher || "N/A",
+            status: rec.status,
+            markedAt: rec.marked_at ? new Date(rec.marked_at).toLocaleTimeString("en-IN") : "",
+            session_name: rec.session_name || "N/A",
+          })),
+        )
+
+        // Set subject statistics with total sessions
+        setSubjectStats(data.subjectStats || [])
+      } else {
+        toast({
+          title: "Error",
+          description: data.message || "Failed to fetch attendance history.",
+          variant: "destructive",
+        })
+      }
+    } catch (err) {
+      console.error("Error fetching student attendance:", err)
+      toast({
+        title: "Error",
+        description: "Failed to connect to server to fetch attendance history.",
+        variant: "destructive",
+      })
+    }
+  }
+
+  useEffect(() => {
+    fetchAttendanceHistory()
+  }, [studentId])
+
+  const handleScanSuccess = async (scannedQrCode: string) => {
+    if (!studentId || studentId === "N/A") {
+      toast({
+        title: "Error",
+        description: "Student ID not found. Please log in again.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    const parts = scannedQrCode.split("_")
+    if (parts.length !== 2) {
+      toast({
+        title: "Invalid QR Code",
+        description: "The scanned QR code format is incorrect.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    const sessionId = parts[0]
+    const scannedTimestamp = Number.parseInt(parts[1], 10)
+
+    if (isNaN(scannedTimestamp)) {
+      toast({
+        title: "Invalid QR Code",
+        description: "The scanned QR code contains an invalid timestamp.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    try {
+      const res = await fetch("http://localhost:5000/api/student-qr-attendance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId, studentId, scannedTimestamp }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        toast({ title: "Attendance Marked", description: "Your attendance has been recorded!" })
+        fetchAttendanceHistory() // Refresh attendance history after successful scan
+      } else {
+        if (data.message === "QR_EXPIRED") {
+          toast({
+            title: "QR Expired",
+            description: "The QR code has expired. Please ask your teacher for a new QR code.",
+            variant: "destructive",
+          })
+        } else {
+          toast({ title: "Error", description: data.message, variant: "destructive" })
+        }
+      }
+    } catch (err) {
+      console.error("QR Scan API error:", err)
+      toast({
+        title: "Scan Error",
+        description: "Failed to connect to server or process scan.",
+        variant: "destructive",
+      })
+    }
   }
 
   const handleScanError = (error: string) => {
@@ -240,15 +242,6 @@ useEffect(() => {
     { icon: CheckCircle, title: "Success", description: "Attendance marked" },
   ]
 
-const [studentGroup, setStudentGroup] = useState("")
-const [studentSemester, setStudentSemester] = useState("")
-
-useEffect(() => {
-  setStudentGroup(localStorage.getItem("studentGroup") || "Not Assigned")
-  setStudentSemester(localStorage.getItem("studentSemester") || "Not Assigned")
-}, [])
-
-
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       {/* Header */}
@@ -266,9 +259,7 @@ useEffect(() => {
             </div>
 
             <div className="flex items-center gap-4">
-              <div className="hidden md:block text-sm text-gray-600 dark:text-gray-400">
-                {currentDateTime}
-              </div>
+              <div className="hidden md:block text-sm text-gray-600 dark:text-gray-400">{currentDateTime}</div>
               <ThemeToggle />
               <Button variant="outline" size="sm" onClick={handleLogout}>
                 <LogOut className="w-4 h-4 mr-2" />
@@ -292,11 +283,10 @@ useEffect(() => {
                       <User className="w-5 h-5" />
                       {studentId}
                     </span>
-<span className="flex items-center gap-2">
-  <Calendar className="w-5 h-5" />
-  Semester {studentSemester} - Group {studentGroup}
-</span>
-
+                    <span className="flex items-center gap-2">
+                      <Calendar className="w-5 h-5" />
+                      Semester {studentSemester} - Group {studentGroup}
+                    </span>
                   </div>
                 </div>
                 <Badge variant="secondary" className="bg-white/20 text-white border-white/20">
@@ -336,7 +326,7 @@ useEffect(() => {
                 <MobileQRScanner
                   onScanSuccess={handleScanSuccess}
                   onScanError={handleScanError}
-                  apiEndpoint="/api/mock-attendance"
+                  apiEndpoint="/api/student-qr-attendance"
                   className="w-full max-w-md"
                 />
               </div>
@@ -350,11 +340,11 @@ useEffect(() => {
                 <CardContent className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg text-center">
-                      <div className="text-2xl font-bold text-blue-600">READY</div>
+                      <div className="2xl font-bold text-blue-600">READY</div>
                       <div className="text-sm text-gray-500">Scanner Status</div>
                     </div>
                     <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg text-center">
-                      <div className="text-2xl font-bold text-green-600">ACTIVE</div>
+                      <div className="2xl font-bold text-green-600">ACTIVE</div>
                       <div className="text-sm text-gray-500">Camera Status</div>
                     </div>
                   </div>
@@ -408,43 +398,47 @@ useEffect(() => {
                   <CardDescription>Your attendance percentage for each subject</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
-                  {subjectStats.map((stat) => (
-                    <div key={stat.subject} className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <div className="font-medium">{stat.subject}</div>
-                        <Badge
-                          variant={stat.percentage >= 75 ? "default" : "destructive"}
-                          className={
-                            stat.percentage >= 75 ? "bg-green-500 hover:bg-green-600" : "bg-red-500 hover:bg-red-600"
-                          }
-                        >
-                          {stat.percentage}%
-                        </Badge>
-                      </div>
-
-                      <div className="text-sm text-gray-600 dark:text-gray-400">
-                        {stat.attendedClasses}/{stat.totalClasses} classes attended
-                      </div>
-
-                      <Progress value={stat.percentage} className="h-3" />
-
-                      {stat.percentage < 75 ? (
-                        <div className="flex items-center gap-2 text-sm p-3 bg-red-50 dark:bg-red-900/20 rounded-lg">
-                          <AlertTriangle className="w-4 h-4 text-red-500" />
-                          <span className="text-red-600 dark:text-red-400">
-                            Need {stat.requiredFor75} more classes to reach 75%
-                          </span>
+                  {subjectStats.length > 0 ? (
+                    subjectStats.map((stat) => (
+                      <div key={stat.subject} className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="font-medium">{stat.subject}</div>
+                          <Badge
+                            variant={stat.percentage >= 75 ? "default" : "destructive"}
+                            className={
+                              stat.percentage >= 75 ? "bg-green-500 hover:bg-green-600" : "bg-red-500 hover:bg-red-600"
+                            }
+                          >
+                            {stat.percentage}%
+                          </Badge>
                         </div>
-                      ) : (
-                        <div className="flex items-center gap-2 text-sm p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
-                          <TrendingUp className="w-4 h-4 text-green-500" />
-                          <span className="text-green-600 dark:text-green-400">
-                            Can miss {stat.canMiss} more classes and stay above 75%
-                          </span>
+
+                        <div className="text-sm text-gray-600 dark:text-gray-400">
+                          {stat.attendedClasses}/{stat.totalClasses} classes attended
                         </div>
-                      )}
-                    </div>
-                  ))}
+
+                        <Progress value={stat.percentage} className="h-3" />
+
+                        {stat.percentage < 75 ? (
+                          <div className="flex items-center gap-2 text-sm p-3 bg-red-50 dark:bg-red-900/20 rounded-lg">
+                            <AlertTriangle className="w-4 h-4 text-red-500" />
+                            <span className="text-red-600 dark:text-red-400">
+                              Need {stat.requiredFor75} more classes to reach 75%
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2 text-sm p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                            <TrendingUp className="w-4 h-4 text-green-500" />
+                            <span className="text-green-600 dark:text-green-400">
+                              Can miss {stat.canMiss} more classes and stay above 75%
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-center text-gray-500">No attendance data available yet.</p>
+                  )}
                 </CardContent>
               </Card>
 
@@ -456,53 +450,57 @@ useEffect(() => {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
-                    {attendanceHistory.slice(0, 6).map((record, index) => (
-                      <motion.div
-                        key={record.id}
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.1 * index }}
-                        className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800 rounded-lg"
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="text-sm">
-                            <div className="font-medium">{record.date}</div>
-                            <div className="text-gray-500">{record.time}</div>
+                    {attendanceHistory.length > 0 ? (
+                      attendanceHistory.slice(0, 6).map((record, index) => (
+                        <motion.div
+                          key={record.id}
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: 0.1 * index }}
+                          className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800 rounded-lg"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="text-sm">
+                              <div className="font-medium">{record.date}</div>
+                              <div className="text-gray-500">{record.time}</div>
+                            </div>
+                            <div>
+                              <div className="font-medium text-sm">{record.subject}</div>
+                              <div className="text-xs text-gray-500">{record.teacher}</div>
+                            </div>
                           </div>
-                          <div>
-                            <div className="font-medium text-sm">{record.subject}</div>
-                            <div className="text-xs text-gray-500">{record.teacher}</div>
-                          </div>
-                        </div>
 
-                        <div className="flex items-center gap-2">
-                          <Badge
-                            variant={
-                              record.status === "present"
-                                ? "default"
-                                : record.status === "late"
-                                  ? "secondary"
-                                  : "destructive"
-                            }
-                            className={
-                              record.status === "present"
-                                ? "bg-green-500 hover:bg-green-600"
-                                : record.status === "late"
-                                  ? "bg-yellow-500 hover:bg-yellow-600"
-                                  : "bg-red-500 hover:bg-red-600"
-                            }
-                          >
-                            {record.status === "present" ? (
-                              <CheckCircle className="w-3 h-3 mr-1" />
-                            ) : (
-                              <XCircle className="w-3 h-3 mr-1" />
-                            )}
-                            {record.status.charAt(0).toUpperCase() + record.status.slice(1)}
-                          </Badge>
-                          {record.markedAt && <span className="text-xs text-gray-500">{record.markedAt}</span>}
-                        </div>
-                      </motion.div>
-                    ))}
+                          <div className="flex items-center gap-2">
+                            <Badge
+                              variant={
+                                record.status === "present"
+                                  ? "default"
+                                  : record.status === "late"
+                                    ? "secondary"
+                                    : "destructive"
+                              }
+                              className={
+                                record.status === "present"
+                                  ? "bg-green-500 hover:bg-green-600"
+                                  : record.status === "late"
+                                    ? "bg-yellow-500 hover:bg-yellow-600"
+                                    : "bg-red-500 hover:bg-red-600"
+                              }
+                            >
+                              {record.status === "present" ? (
+                                <CheckCircle className="w-3 h-3 mr-1" />
+                              ) : (
+                                <XCircle className="w-3 h-3 mr-1" />
+                              )}
+                              {record.status.charAt(0).toUpperCase() + record.status.slice(1)}
+                            </Badge>
+                            {record.markedAt && <span className="text-xs text-gray-500">{record.markedAt}</span>}
+                          </div>
+                        </motion.div>
+                      ))
+                    ) : (
+                      <p className="text-center text-gray-500">No recent attendance records.</p>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -590,9 +588,9 @@ useEffect(() => {
                     <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
                       <div>
                         <p className="font-medium">Course</p>
-<p className="text-sm text-gray-600 dark:text-gray-400">
-  semester {studentSemester} - Group {studentGroup}
-</p>
+                        <p className="text-sm text-gray-600 dark:text-gray-400">
+                          semester {studentSemester} - Group {studentGroup}
+                        </p>
                       </div>
                     </div>
                   </div>

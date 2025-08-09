@@ -17,6 +17,7 @@ import {
   RotateCcw,
   Settings,
   Calendar,
+  XCircle,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -29,81 +30,56 @@ import { ThemeToggle } from "@/components/theme-toggle"
 import { QRCodeSVG } from "qrcode.react"
 import { useRouter } from "next/navigation"
 import { useToast } from "@/hooks/use-toast"
+import { exportToExcel } from "@/utils/exportToExcel" // Import the exportToExcel function
 
-interface ClassData {
-  id: string
-  name: string
-  subject: string
-  students: number
-  avgAttendance: number
+export interface ClassData {
+  id: string // This will be the group_name
+  name: string // Display name for the class/group
+  subject: string // Subject associated with this group for the teacher
+  students: number // Total students in this group
+  avgAttendance: number // Average attendance for this group/subject
 }
-
-interface SessionData {
+export interface SessionData {
   id: string
   date: string
   time: string
   attendance: number
   total: number
   percentage: number
-}
-
-interface Student {
-  id: string
   name: string
-  rollNumber: string
-  studentId: string
-  present: boolean
+  subject: string
 }
-
-const classes: ClassData[] = [
-  { id: "g4", name: "Class G4", subject: "DSOOPS", students: 20, avgAttendance: 85 },
-  { id: "g3", name: "Class G3", subject: "DBMS", students: 18, avgAttendance: 92 },
-  { id: "g2", name: "Class G2", subject: "OOSE", students: 22, avgAttendance: 78 },
-  { id: "g1", name: "Class G1", subject: "FEE", students: 25, avgAttendance: 88 },
-]
-
-const recentSessions: SessionData[] = [
-  { id: "1", date: "Aug 2, 2025", time: "09:06 AM", attendance: 18, total: 20, percentage: 90 },
-  { id: "2", date: "Aug 1, 2025", time: "09:06 AM", attendance: 16, total: 20, percentage: 80 },
-  { id: "3", date: "Jul 31, 2025", time: "09:06 AM", attendance: 19, total: 20, percentage: 95 },
-  { id: "4", date: "Jul 30, 2025", time: "09:06 AM", attendance: 17, total: 20, percentage: 85 },
-]
-
-const students: Student[] = [
-  { id: "1", name: "John Doe", rollNumber: "G4-001", studentId: "G4001", present: false },
-  { id: "2", name: "Jane Smith", rollNumber: "G4-002", studentId: "G4002", present: false },
-  { id: "3", name: "Mike Johnson", rollNumber: "G4-003", studentId: "G4003", present: false },
-  { id: "4", name: "Sarah Wilson", rollNumber: "G4-004", studentId: "G4004", present: false },
-  { id: "5", name: "David Brown", rollNumber: "G4-005", studentId: "G4005", present: false },
-]
+export interface Student {
+  id: string // Database ID of the student
+  name: string
+  rollNumber: string // Student's roll_no, used as studentId
+  email: string
+  status: "present" | "absent" | "late" | null // null means not marked for current session
+}
 
 export default function TeacherDashboard() {
-  const [selectedClass, setSelectedClass] = useState<ClassData>(classes[0])
+  const [classes, setClasses] = useState<ClassData[]>([])
+  const [selectedClass, setSelectedClass] = useState<ClassData | null>(null)
+  const [studentList, setStudentList] = useState<Student[]>([])
+  const [recentSessions, setRecentSessions] = useState<SessionData[]>([])
+
   const [sessionActive, setSessionActive] = useState(false)
-  const [qrCode, setQrCode] = useState("")
+  const [qrCodeValue, setQrCodeValue] = useState("") // Renamed to avoid conflict with component
+  const [currentSessionId, setCurrentSessionId] = useState<number | null>(null) // Store the actual session ID from DB
   const [timeLeft, setTimeLeft] = useState(10)
-  const [studentsPresent, setStudentsPresent] = useState(0)
-  const [studentList, setStudentList] = useState<Student[]>(students)
+  const [studentsPresent, setStudentsPresent] = useState(0) // This is for the QR session live count
+
   const [searchTerm, setSearchTerm] = useState("")
   const [currentDateTime, setCurrentDateTime] = useState("")
-  const [referenceId, setReferenceId] = useState("")
+  const [referenceId, setReferenceId] = useState("") // This is a local ref ID, not from DB
   const [scannerZoom, setScannerZoom] = useState(false)
   const qrContainerRef = useRef<HTMLDivElement>(null)
 
   const router = useRouter()
   const { toast } = useToast()
 
-  useEffect(() => {
-    const token = localStorage.getItem("studentAuthToken")
-    if (!token) {
-      router.push("/") // redirect to login
-    }
-  }, [])
-  
-
-
-  const userName =
-    typeof window !== "undefined" ? localStorage.getItem("userName") || "Dr. Sarah Johnson" : "Dr. Sarah Johnson"
+  const userName = typeof window !== "undefined" ? localStorage.getItem("userName") || "Teacher" : "Teacher"
+  const teacherId = typeof window !== "undefined" ? localStorage.getItem("teacherId") : null
 
   useEffect(() => {
     const token = localStorage.getItem("userToken")
@@ -127,7 +103,7 @@ export default function TeacherDashboard() {
           minute: "2-digit",
           second: "2-digit",
           hour12: true,
-        })
+        }),
       )
     }
     updateDateTime()
@@ -135,35 +111,169 @@ export default function TeacherDashboard() {
     return () => clearInterval(interval)
   }, [])
 
+  // QR code generation logic and renewal API call
   useEffect(() => {
-    if (sessionActive) {
-      const interval = setInterval(() => {
-        const sessionId = Math.random().toString(36).substring(7)
-        const timestamp = Date.now()
-        setQrCode(`${selectedClass.id}-${sessionId}-${timestamp}`)
-        setTimeLeft(10)
-      }, 10000)
-      const sessionId = Math.random().toString(36).substring(7)
-      const timestamp = Date.now()
-      setQrCode(`${selectedClass.id}-${sessionId}-${timestamp}`)
-      return () => clearInterval(interval)
+    let interval: NodeJS.Timeout | undefined
+    if (sessionActive && currentSessionId) {
+      const generateNewQrValue = () => {
+        const newQrValue = `${currentSessionId}_${Date.now()}` // New dynamic QR value
+        setQrCodeValue(newQrValue)
+        // Call backend to update last_renewed_at
+        fetch("http://localhost:5000/api/renew-qr-session", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionId: currentSessionId }),
+        }).catch((error) => console.error("Failed to renew QR timestamp:", error))
+      }
+
+      // Generate initial QR value
+      generateNewQrValue()
+      setTimeLeft(10)
+
+      interval = setInterval(() => {
+        setTimeLeft((prev) => {
+          if (prev === 1) {
+            generateNewQrValue() // Generate new QR value and renew timestamp when timer resets
+            return 10
+          }
+          return prev - 1
+        })
+      }, 1000)
     }
-  }, [sessionActive, selectedClass.id])
+
+    return () => {
+      if (interval) clearInterval(interval)
+    }
+  }, [sessionActive, currentSessionId])
 
   useEffect(() => {
-    if (sessionActive && qrCode) {
-      setReferenceId(`REF-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`)
+    if (sessionActive && currentSessionId) {
+      setReferenceId(`REF-${currentSessionId}-${Math.random().toString(36).substring(2, 8)}`)
     } else {
       setReferenceId("")
     }
-  }, [qrCode, sessionActive])
+  }, [currentSessionId, sessionActive])
+
+  // Fetch teacher's groups from backend
+  useEffect(() => {
+    if (!teacherId) return
+
+    fetch("http://localhost:5000/api/get-teacher-groups", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ teacherId }),
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success && data.groups.length > 0) {
+          const fetchedClasses = data.groups.map((grp: any) => ({
+            id: grp.group_name,
+            name: `Group ${grp.group_name}`,
+            subject: grp.subject_name || "General",
+            students: 0, // Will be updated by get-group-students
+            avgAttendance: 0, // Will be updated by analytics
+          }))
+          setClasses(fetchedClasses)
+          setSelectedClass(fetchedClasses[0]) // Select the first class by default
+        }
+      })
+      .catch((err) => console.error("Error fetching groups:", err))
+  }, [teacherId])
+
+  // Fetch students for the selected group and their attendance status for the current session
+const fetchStudentsAndAttendanceStatus = async () => {
+  if (!selectedClass) return;
+
+  try {
+    // 1. Fetch all students in the group
+    const studentsRes = await fetch("http://localhost:5000/api/get-group-students", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ groupName: selectedClass.id }),
+    });
+
+    const studentsData = await studentsRes.json();
+
+    if (studentsData.success) {
+      // Convert DB keys to consistent camelCase
+      let studentsFetched: Student[] = studentsData.students.map((stu: any) => ({
+        id: String(stu.id),
+        name: stu.name,
+        rollNumber: String(stu.roll_no), // ensure string type
+        email: stu.email,
+        status: null, // default before fetching attendance
+      }));
+
+      // 2. If a session is active, fetch attendance status
+      if (currentSessionId) {
+        const statusRes = await fetch("http://localhost:5000/api/get-session-student-status", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ groupName: selectedClass.id, sessionId: currentSessionId }),
+        });
+
+        const statusData = await statusRes.json();
+
+        if (statusData.success) {
+  const statusMap = new Map<string, "present" | "absent" | "late">(
+    statusData.students.map((s: any) => [String(s.roll_no), s.status])
+  );
+
+  studentsFetched = studentsFetched.map((student) => ({
+    ...student,
+    status: (statusMap.get(student.rollNumber) as "present" | "absent" | "late" | null) ?? null,
+  }));
+}
+
+      }
+
+      // 3. Update state
+      setStudentList(studentsFetched);
+      setSelectedClass((prev) =>
+        prev ? { ...prev, students: studentsFetched.length } : null
+      );
+    }
+  } catch (err) {
+    console.error("Error fetching students or attendance status:", err);
+  }
+};
+
 
   useEffect(() => {
-    if (sessionActive && timeLeft > 0) {
-      const timer = setTimeout(() => setTimeLeft(timeLeft - 1), 1000)
-      return () => clearTimeout(timer)
+    fetchStudentsAndAttendanceStatus()
+  }, [selectedClass, currentSessionId]) // Re-fetch when class or active session changes
+
+  // Fetch recent sessions for the selected group
+  const fetchRecentSessions = async () => {
+    if (!selectedClass || !teacherId) return
+    try {
+      const res = await fetch("http://localhost:5000/api/get-group-sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ teacherId, groupName: selectedClass.id }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        const sessionsFetched = data.sessions.map((session: any) => ({
+          id: session.id.toString(),
+          date: new Date(session.date).toLocaleDateString("en-IN"),
+          time: "", // Backend doesn't provide time for session creation, only date
+          attendance: session.avg_attendance ?? 0,
+          total: 0, // You can add total students if you store that
+          percentage: session.avg_attendance ?? 0,
+          name: session.name,
+          subject: session.subject,
+        }))
+        setRecentSessions(sessionsFetched)
+      }
+    } catch (err) {
+      console.error("Error fetching recent sessions:", err)
     }
-  }, [sessionActive, timeLeft])
+  }
+
+  useEffect(() => {
+    fetchRecentSessions()
+  }, [selectedClass, teacherId])
 
   const handleScannerZoom = () => {
     setScannerZoom((prev) => !prev)
@@ -173,6 +283,7 @@ export default function TeacherDashboard() {
     localStorage.removeItem("userToken")
     localStorage.removeItem("userType")
     localStorage.removeItem("userName")
+    localStorage.removeItem("teacherId")
     toast({
       title: "Logged Out",
       description: "You have been successfully logged out.",
@@ -180,94 +291,230 @@ export default function TeacherDashboard() {
     router.push("/")
   }
 
-  const startSession = () => {
-    setSessionActive(true)
-    setStudentsPresent(0)
-    toast({
-      title: "Session Started",
-      description: `QR session started for ${selectedClass.subject} - ${selectedClass.name}`,
-    })
+  const startSession = async () => {
+    if (!selectedClass || !teacherId) {
+      toast({
+        title: "Error",
+        description: "Please select a class and ensure teacher ID is available.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    try {
+      const res = await fetch("http://localhost:5000/api/create-qr-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          teacherId,
+          classId: selectedClass.id,
+          subject: selectedClass.subject,
+          name: `QR Session - ${selectedClass.name}`, // Cleaned session name
+          date: new Date().toISOString().slice(0, 10), // YYYY-MM-DD
+        }),
+      })
+      const data = await res.json()
+
+      if (data.success) {
+        setCurrentSessionId(data.sessionId) // Store the actual session ID
+        setSessionActive(true)
+        setStudentsPresent(0) // Reset student present count for new session
+        toast({
+          title: "Session Started",
+          description: `QR session started for ${selectedClass.subject} - ${selectedClass.name}`,
+        })
+        fetchRecentSessions() // Refresh recent sessions list
+        fetchStudentsAndAttendanceStatus() // Refresh manual attendance list with initial statuses
+      } else {
+        toast({
+          title: "Error",
+          description: data.message || "Failed to start QR session.",
+          variant: "destructive",
+        })
+      }
+    } catch (err) {
+      console.error("Error starting session:", err)
+      toast({
+        title: "Error",
+        description: "Failed to connect to server to start session.",
+        variant: "destructive",
+      })
+    }
   }
 
   const stopSession = () => {
     setSessionActive(false)
-    setQrCode("")
+    setQrCodeValue("")
+    setCurrentSessionId(null)
     setTimeLeft(10)
     toast({
       title: "Session Stopped",
       description: "Attendance session has been ended.",
     })
+    fetchRecentSessions() // Refresh recent sessions list
+    fetchStudentsAndAttendanceStatus() // Clear manual attendance statuses
   }
 
+  // Simulate attendance (for demo purposes, doesn't hit backend)
   const simulateAttendance = () => {
-    if (studentsPresent < selectedClass.students) {
+    if (selectedClass && studentsPresent < selectedClass.students) {
       setStudentsPresent((prev) => prev + 1)
       toast({
-        title: "Student Scanned",
-        description: "A student has marked their attendance.",
+        title: "Student Scanned (Demo)",
+        description: "A student has marked their attendance (simulated).",
       })
     }
   }
 
-  const toggleAttendance = (studentId: string) => {
-    setStudentList((prev) =>
-      prev.map((student) => (student.id === studentId ? { ...student, present: !student.present } : student))
-    )
+  // Manual attendance toggle and backend update
+  const toggleAttendance = async (studentRollNo: string, currentStatus: Student["status"]) => {
+    if (!currentSessionId) {
+      toast({
+        title: "Error",
+        description: "Please start a QR session to mark manual attendance.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    let newStatus: "present" | "absent" = "present"
+    if (currentStatus === "present") {
+      newStatus = "absent"
+    } else if (currentStatus === "absent") {
+      newStatus = "present" // Toggle back to present if currently absent
+    } else {
+      newStatus = "present" // Default to present if null
+    }
+
+    try {
+      const res = await fetch("http://localhost:5000/api/mark-attendance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          studentRollNo,
+          sessionId: currentSessionId,
+          status: newStatus,
+        }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setStudentList((prev) =>
+          prev.map((student) => (student.rollNumber === studentRollNo ? { ...student, status: newStatus } : student)),
+        )
+        toast({
+          title: "Attendance Updated",
+          description: `Student ${studentRollNo} marked as ${newStatus}.`,
+        })
+        fetchRecentSessions() // Update analytics after manual change
+      } else {
+        toast({
+          title: "Error",
+          description: data.message || "Failed to update attendance.",
+          variant: "destructive",
+        })
+      }
+    } catch (err) {
+      console.error("Error updating manual attendance:", err)
+      toast({
+        title: "Error",
+        description: "Failed to connect to server for manual attendance update.",
+        variant: "destructive",
+      })
+    }
   }
 
-  const markAllPresent = () => {
-    setStudentList((prev) => prev.map((student) => ({ ...student, present: true })))
-    toast({
-      title: "All Students Marked Present",
-      description: "All students have been marked as present.",
-    })
+  const markAllPresent = async () => {
+    if (!currentSessionId) {
+      toast({
+        title: "Error",
+        description: "Please start a QR session to mark all students present.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    const updates = studentList.map((student) => ({
+      studentRollNo: student.rollNumber,
+      sessionId: currentSessionId,
+      status: "present",
+    }))
+
+    try {
+      // Send all updates in parallel
+      await Promise.all(
+        updates.map((update) =>
+          fetch("http://localhost:5000/api/mark-attendance", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(update),
+          }),
+        ),
+      )
+      setStudentList((prev) => prev.map((student) => ({ ...student, status: "present" })))
+      toast({
+        title: "All Students Marked Present",
+        description: "All students have been marked as present.",
+      })
+      fetchRecentSessions() // Update analytics after manual change
+    } catch (err) {
+      console.error("Error marking all present:", err)
+      toast({
+        title: "Error",
+        description: "Failed to mark all students present.",
+        variant: "destructive",
+      })
+    }
   }
 
-  const resetAll = () => {
-    setStudentList((prev) => prev.map((student) => ({ ...student, present: false })))
-    toast({
-      title: "Attendance Reset",
-      description: "All attendance records have been reset.",
-    })
-  }
+  const resetAll = async () => {
+    if (!currentSessionId) {
+      toast({
+        title: "Error",
+        description: "Please start a QR session to reset attendance.",
+        variant: "destructive",
+      })
+      return
+    }
 
-  const exportToExcel = () => {
-    const csvContent = [
-      ["Session ID", "Date", "Time", "Attendance", "Total", "Percentage"],
-      ...recentSessions.map((session) => [
-        session.id,
-        session.date,
-        session.time,
-        session.attendance.toString(),
-        session.total.toString(),
-        `${session.percentage}%`,
-      ]),
-    ]
-      .map((row) => row.join(","))
-      .join("\n")
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
-    const link = document.createElement("a")
-    const url = URL.createObjectURL(blob)
-    link.setAttribute("href", url)
-    link.setAttribute("download", `${selectedClass.subject}_${selectedClass.name}_attendance.csv`)
-    link.style.visibility = "hidden"
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    toast({
-      title: "Export Successful",
-      description: "Attendance data has been exported to CSV file.",
-    })
+    const updates = studentList.map((student) => ({
+      studentRollNo: student.rollNumber,
+      sessionId: currentSessionId,
+      status: "absent", // Resetting means marking them absent
+    }))
+
+    try {
+      await Promise.all(
+        updates.map((update) =>
+          fetch("http://localhost:5000/api/mark-attendance", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(update),
+          }),
+        ),
+      )
+      setStudentList((prev) => prev.map((student) => ({ ...student, status: "absent" })))
+      toast({
+        title: "Attendance Reset",
+        description: "All attendance records have been reset to absent.",
+      })
+      fetchRecentSessions() // Update analytics after manual change
+    } catch (err) {
+      console.error("Error resetting all:", err)
+      toast({
+        title: "Error",
+        description: "Failed to reset all attendance.",
+        variant: "destructive",
+      })
+    }
   }
 
   const filteredStudents = studentList.filter(
     (student) =>
       student.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      student.rollNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      student.studentId.toLowerCase().includes(searchTerm.toLowerCase())
+      student.rollNumber.toLowerCase().includes(searchTerm.toLowerCase()),
   )
 
-  const presentCount = studentList.filter((s) => s.present).length
+  const presentCount = studentList.filter((s) => s.status === "present").length
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
@@ -285,9 +532,7 @@ export default function TeacherDashboard() {
               </div>
             </div>
             <div className="flex items-center gap-4">
-              <div className="hidden md:block text-sm text-gray-600 dark:text-gray-400">
-                {currentDateTime}
-              </div>
+              <div className="hidden md:block text-sm text-gray-600 dark:text-gray-400">{currentDateTime}</div>
               <ThemeToggle />
               <Button variant="outline" size="sm" onClick={handleLogout}>
                 <LogOut className="w-4 h-4 mr-2" />
@@ -308,11 +553,11 @@ export default function TeacherDashboard() {
                   <div className="flex items-center gap-6 text-blue-100">
                     <span className="flex items-center gap-2">
                       <Users className="w-5 h-5" />
-                      {selectedClass.subject}
+                      {selectedClass?.subject}
                     </span>
                     <span className="flex items-center gap-2">
                       <UserCheck className="w-5 h-5" />
-                      {selectedClass.name}
+                      {selectedClass?.name}
                     </span>
                   </div>
                 </div>
@@ -338,35 +583,37 @@ export default function TeacherDashboard() {
                     <Users className="w-6 h-6 text-blue-600 dark:text-blue-400" />
                   </div>
                   <div>
-                    <h3 className="font-semibold text-lg">{selectedClass.subject}</h3>
-                    <p className="text-gray-600 dark:text-gray-400">Data Structures & Object Oriented Programming</p>
+                    <h3 className="font-semibold text-lg">{selectedClass?.subject}</h3>
+                    <p className="text-gray-600 dark:text-gray-400">
+                      {selectedClass?.name ? `Group: ${selectedClass.name}` : "Select a class"}
+                    </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-4">
                   <div className="text-right">
                     <label className="text-sm font-medium">Select Class</label>
                     <Select
-                      value={selectedClass.id}
+                      value={selectedClass?.id || ""}
                       onValueChange={(value) => {
                         const newClass = classes.find((c) => c.id === value)
                         if (newClass) setSelectedClass(newClass)
                       }}
                     >
                       <SelectTrigger className="w-32">
-                        <SelectValue />
+                        <SelectValue placeholder="Select Class" />
                       </SelectTrigger>
                       <SelectContent>
                         {classes.map((cls) => (
                           <SelectItem key={cls.id} value={cls.id}>
-                            {cls.name}
+                            {cls.name} ({cls.subject})
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </div>
                   <div className="flex gap-2">
-                    <Badge variant="outline">{selectedClass.subject}</Badge>
-                    <Badge variant="secondary">{selectedClass.name}</Badge>
+                    <Badge variant="outline">{selectedClass?.subject}</Badge>
+                    <Badge variant="secondary">{selectedClass?.name}</Badge>
                   </div>
                 </div>
               </div>
@@ -404,10 +651,10 @@ export default function TeacherDashboard() {
                       <div>
                         <CardTitle className="flex items-center gap-2">
                           <Play className="w-5 h-5" />
-                          {selectedClass.subject} - {selectedClass.name}
+                          {selectedClass?.subject} - {selectedClass?.name}
                         </CardTitle>
                         <CardDescription>
-                          Generate QR codes for {selectedClass.subject} attendance in {selectedClass.name}
+                          Generate QR codes for {selectedClass?.subject} attendance in {selectedClass?.name}
                         </CardDescription>
                       </div>
                       {sessionActive && (
@@ -426,15 +673,15 @@ export default function TeacherDashboard() {
                       style={scannerZoom ? { position: "relative" } : {}}
                     >
                       <motion.div
-                        key={qrCode}
+                        key={qrCodeValue} // Key on qrCodeValue to re-animate on change
                         initial={{ scale: 0.8, opacity: 0 }}
                         animate={{ scale: 1, opacity: 1 }}
                         transition={{ duration: 0.3 }}
                         className="cursor-pointer"
                         onClick={handleScannerZoom}
                       >
-                        {sessionActive && qrCode ? (
-                          <QRCodeSVG value={qrCode} size={scannerZoom ? 350 : 200} level="M" includeMargin />
+                        {sessionActive && qrCodeValue ? (
+                          <QRCodeSVG value={qrCodeValue} size={scannerZoom ? 350 : 200} level="M" includeMargin />
                         ) : (
                           <div
                             className={`flex items-center justify-center bg-gray-100 dark:bg-gray-800 rounded ${
@@ -485,17 +732,20 @@ export default function TeacherDashboard() {
                         <div className="flex justify-between text-sm">
                           <span>Students Present</span>
                           <span className="font-semibold">
-                            {studentsPresent}/{selectedClass.students}
+                            {studentsPresent}/{selectedClass?.students || 0}
                           </span>
                         </div>
-                        <Progress value={(studentsPresent / selectedClass.students) * 100} className="h-3" />
+                        <Progress
+                          value={selectedClass ? (studentsPresent / selectedClass.students) * 100 : 0}
+                          className="h-3"
+                        />
                         <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
                           <h4 className="font-medium mb-2">Session Instructions:</h4>
                           <ul className="text-sm space-y-1 text-gray-600 dark:text-gray-400">
                             <li>• Students scan QR code to mark attendance</li>
                             <li>• QR code updates every 10 seconds for security</li>
                             <li>
-                              • Attendance recorded for {selectedClass.subject} - {selectedClass.name}
+                              • Attendance recorded for {selectedClass?.subject} - {selectedClass?.name}
                             </li>
                             <li>• Monitor real-time student count</li>
                             <li>• Use manual attendance for scanning issues</li>
@@ -517,16 +767,16 @@ export default function TeacherDashboard() {
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                       <BarChart3 className="w-5 h-5" />
-                      {selectedClass.subject} - {selectedClass.name}
+                      {selectedClass?.subject} - {selectedClass?.name}
                     </CardTitle>
                     <CardDescription>
-                      Attendance analytics for {selectedClass.subject} in {selectedClass.name}
+                      Attendance analytics for {selectedClass?.subject} in {selectedClass?.name}
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-4">
                       <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium">{selectedClass.name} Performance</span>
+                        <span className="text-sm font-medium">{selectedClass?.name} Performance</span>
                         <TrendingUp className="w-4 h-4 text-green-500" />
                       </div>
                       <div className="grid grid-cols-3 gap-4 text-center">
@@ -535,7 +785,7 @@ export default function TeacherDashboard() {
                           <div className="text-xs text-gray-500">Average</div>
                         </div>
                         <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                          <div className="text-2xl font-bold text-blue-600">10</div>
+                          <div className="text-2xl font-bold text-blue-600">{recentSessions.length}</div>
                           <div className="text-xs text-gray-500">Sessions</div>
                         </div>
                         <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
@@ -550,7 +800,7 @@ export default function TeacherDashboard() {
                   <CardHeader>
                     <div className="flex items-center justify-between">
                       <CardTitle>Recent Sessions</CardTitle>
-                      <Button onClick={exportToExcel} variant="outline" size="sm">
+                      <Button onClick={() => exportToExcel(recentSessions, selectedClass)} variant="outline" size="sm">
                         <Download className="w-4 h-4 mr-2" />
                         Export Excel
                       </Button>
@@ -558,26 +808,28 @@ export default function TeacherDashboard() {
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-3">
-                      {recentSessions.map((session, index) => (
-                        <motion.div
-                          key={session.id}
-                          initial={{ opacity: 0, y: 10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          transition={{ delay: 0.1 * index }}
-                          className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800 rounded-lg"
-                        >
-                          <div>
-                            <div className="font-medium text-sm">{session.date}</div>
-                            <div className="text-xs text-gray-500">{session.time}</div>
-                          </div>
-                          <div className="text-right">
-                            <div className="text-sm font-medium">
-                              {session.attendance}/{session.total}
+                      {recentSessions.length > 0 ? (
+                        recentSessions.map((session, index) => (
+                          <motion.div
+                            key={session.id}
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.1 * index }}
+                            className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800 rounded-lg"
+                          >
+                            <div>
+                              <div className="font-medium text-sm">{session.date}</div>
+                              <div className="text-xs text-gray-500">{session.name}</div>
                             </div>
-                            <div className="text-xs text-gray-500">{session.percentage}% present</div>
-                          </div>
-                        </motion.div>
-                      ))}
+                            <div className="text-right">
+                              <div className="text-sm font-medium">{session.percentage.toFixed(1)}%</div>
+                              <div className="text-xs text-gray-500">{session.subject}</div>
+                            </div>
+                          </motion.div>
+                        ))
+                      ) : (
+                        <p className="text-center text-gray-500">No recent sessions available.</p>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
@@ -592,9 +844,9 @@ export default function TeacherDashboard() {
                   <CardHeader>
                     <div className="flex items-center justify-between">
                       <div>
-                        <CardTitle>Manual Attendance - {selectedClass.name}</CardTitle>
+                        <CardTitle>Manual Attendance - {selectedClass?.name}</CardTitle>
                         <CardDescription>
-                          Subject: {selectedClass.subject} • Class: {selectedClass.name}
+                          Subject: {selectedClass?.subject} • Class: {selectedClass?.name}
                         </CardDescription>
                       </div>
                       <div className="flex gap-2">
@@ -614,7 +866,7 @@ export default function TeacherDashboard() {
                       <div className="relative">
                         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                         <Input
-                          placeholder="Search by name, roll number, or student ID..."
+                          placeholder="Search by name, roll number..."
                           value={searchTerm}
                           onChange={(e) => setSearchTerm(e.target.value)}
                           className="pl-10 h-11"
@@ -622,39 +874,60 @@ export default function TeacherDashboard() {
                       </div>
                     </div>
                     <div className="space-y-3">
-                      {filteredStudents.map((student, index) => (
-                        <motion.div
-                          key={student.id}
-                          initial={{ opacity: 0, y: 10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          transition={{ delay: 0.1 * index }}
-                          className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800 rounded-lg"
-                        >
-                          <div>
-                            <div className="font-medium">{student.name}</div>
-                            <div className="text-sm text-gray-500">
-                              {student.rollNumber} • {student.studentId}
-                            </div>
-                          </div>
-                          <Button
-                            onClick={() => toggleAttendance(student.id)}
-                            variant={student.present ? "default" : "outline"}
-                            className={student.present ? "bg-green-600 hover:bg-green-700" : ""}
+                      {filteredStudents.length > 0 ? (
+                        filteredStudents.map((student, index) => (
+                          <motion.div
+                            key={student.id}
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.1 * index }}
+                            className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800 rounded-lg"
                           >
-                            {student.present ? (
-                              <>
-                                <CheckCircle className="w-4 h-4 mr-2" />
-                                Present
-                              </>
-                            ) : (
-                              <>
-                                <UserCheck className="w-4 h-4 mr-2" />
-                                Mark Present
-                              </>
-                            )}
-                          </Button>
-                        </motion.div>
-                      ))}
+                            <div>
+                              <div className="font-medium">{student.name}</div>
+                              <div className="text-sm text-gray-500">Roll No: {student.rollNumber}</div>
+                            </div>
+                            <Button
+                              onClick={() => toggleAttendance(student.rollNumber, student.status)}
+                              variant={
+                                student.status === "present"
+                                  ? "default"
+                                  : student.status === "absent"
+                                    ? "destructive"
+                                    : "outline"
+                              }
+                              className={
+                                student.status === "present"
+                                  ? "bg-green-600 hover:bg-green-700"
+                                  : student.status === "absent"
+                                    ? "bg-red-600 hover:bg-red-700"
+                                    : ""
+                              }
+                            >
+                              {student.status === "present" ? (
+                                <>
+                                  <CheckCircle className="w-4 h-4 mr-2" />
+                                  Present
+                                </>
+                              ) : student.status === "absent" ? (
+                                <>
+                                  <XCircle className="w-4 h-4 mr-2" />
+                                  Absent
+                                </>
+                              ) : (
+                                <>
+                                  <UserCheck className="w-4 h-4 mr-2" />
+                                  Mark Present
+                                </>
+                              )}
+                            </Button>
+                          </motion.div>
+                        ))
+                      ) : (
+                        <p className="text-center text-gray-500">
+                          No students found or selected class has no students.
+                        </p>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
@@ -664,7 +937,7 @@ export default function TeacherDashboard() {
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                       <Users className="w-5 h-5" />
-                      {selectedClass.name} Summary
+                      {selectedClass?.name} Summary
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
@@ -684,7 +957,9 @@ export default function TeacherDashboard() {
                       <div className="pt-2 border-t">
                         <div className="flex justify-between font-medium">
                           <span>Attendance Rate</span>
-                          <span>{Math.round((presentCount / studentList.length) * 100)}%</span>
+                          <span>
+                            {studentList.length > 0 ? Math.round((presentCount / studentList.length) * 100) : 0}%
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -699,7 +974,7 @@ export default function TeacherDashboard() {
                       <li>• Use this for students who cannot scan QR codes</li>
                       <li>• Verify student identity before marking present</li>
                       <li>
-                        • Records are specific to {selectedClass.subject} - {selectedClass.name}
+                        • Records are specific to {selectedClass?.subject} - {selectedClass?.name}
                       </li>
                       <li>• Changes are saved automatically</li>
                     </ul>
@@ -730,7 +1005,7 @@ export default function TeacherDashboard() {
                           <div className="text-sm text-gray-500">{cls.students} students</div>
                         </div>
                         <div className="text-right">
-                          <div className="font-bold text-lg">{cls.avgAttendance}%</div>
+                          <div className="font-bold text-lg">{cls.avgAttendance.toFixed(1)}%</div>
                           <div className="text-xs text-gray-500">Average</div>
                         </div>
                       </div>
@@ -745,7 +1020,7 @@ export default function TeacherDashboard() {
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <Button
-                    onClick={exportToExcel}
+                    onClick={() => exportToExcel(recentSessions, selectedClass)}
                     className="w-full justify-start h-12 bg-transparent"
                     variant="outline"
                   >
@@ -796,7 +1071,7 @@ export default function TeacherDashboard() {
                     <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
                       <div>
                         <p className="font-medium">Employee ID</p>
-                        <p className="text-sm text-gray-600 dark:text-gray-400">EMP001</p>
+                        <p className="text-sm text-gray-600 dark:text-gray-400">{teacherId}</p>
                       </div>
                     </div>
                   </div>

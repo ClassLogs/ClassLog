@@ -13,6 +13,7 @@ import { useRouter } from "next/navigation"
 import { useToast } from "@/hooks/use-toast"
 
 export default function LoginPage() {
+  
   const [teacherCredentials, setTeacherCredentials] = useState({
     email: "",
     password: "",
@@ -28,124 +29,118 @@ export default function LoginPage() {
   const router = useRouter()
   const { toast } = useToast()
 
-const handleTeacherLogin = async () => {
-  if (!teacherCredentials.email || !teacherCredentials.password) {
-    toast({
-      title: "Missing Fields",
-      description: "Please enter both email and password",
-      variant: "destructive",
-    })
-    return
-  }
-
-  try {
-    const res = await fetch("http://localhost:5000/api/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        userType: "teacher",
-        email: teacherCredentials.email,
-        password: teacherCredentials.password,
-      }),
-    })
-
-    const data = await res.json()
-    console.log("Login response:", data)
-
-    if (data.success) {
-      localStorage.setItem("teacherAuthToken", data.token)
-      localStorage.setItem("userToken", data.token)
-      localStorage.setItem("userType", "teacher")
-      localStorage.setItem("teacherId", data.teacherId)
-
-      localStorage.setItem("teacherName", data.name)
-      localStorage.setItem("userName", data.name)
-
-      localStorage.setItem("teacherId", data.id)
-      localStorage.setItem("teacherEmail", data.email)
-      localStorage.setItem("teacherDepartment", data.department)
-
+  const handleTeacherLogin = async () => {
+    if (!teacherCredentials.email || !teacherCredentials.password) {
       toast({
-        title: "Login Successful",
-        description: `Welcome, ${data.name}!`,
-      })
-
-      router.push("/teacher/dashboard")
-    } else {
-      toast({
-        title: "Login Failed",
-        description: data.message || "Invalid credentials",
+        title: "Missing Fields",
+        description: "Please enter both email and password",
         variant: "destructive",
       })
+      return
     }
-  } catch (err) {
-    console.error("Login error:", err)
-    toast({
-      title: "Network Error",
-      description: "Something went wrong.",
-      variant: "destructive",
-    })
-  }
-}
 
-
-
-
-const handleStudentLogin = async () => {
-  setIsLoading(true)
-  try {
-    const res = await fetch("http://localhost:5000/api/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        userType: "student",
-        id: studentCredentials.studentId,  // ✅ FIX HERE
-        password: studentCredentials.password,
-      }),
-    })
-
-    const data = await res.json()
-
-    if (data.success) {
-      localStorage.setItem("studentAuthToken", data.token)
-      localStorage.setItem("userToken", data.token)
-localStorage.setItem("userType", "student")
-
-      localStorage.setItem("userName", data.name)      // ✅ main name used in portal
-      localStorage.setItem("studentName", data.name)   // optional: keep if needed
-
-      localStorage.setItem("studentId", data.id)
-      localStorage.setItem("studentClass", data.className)
-      localStorage.setItem("studentGroup", data.group)
-localStorage.setItem("studentSemester", data.semester)
-
-
-      toast({
-        title: "Login Successful",
-        description: `Welcome, ${data.name}!`,
+    setIsLoading(true)
+    try {
+      const res = await fetch("http://localhost:5000/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userType: "teacher",
+          email: teacherCredentials.email,
+          password: teacherCredentials.password,
+        }),
       })
 
-      router.push("/student/portal")
-    } else {
+      const data = await res.json()
+      console.log("Login response:", data)
+
+      if (data.success) {
+        localStorage.setItem("teacherAuthToken", data.token)
+        localStorage.setItem("userToken", data.token)
+        localStorage.setItem("userType", "teacher")
+        localStorage.setItem("teacherId", data.id)
+        localStorage.setItem("teacherName", data.name)
+        localStorage.setItem("userName", data.name)
+        localStorage.setItem("teacherEmail", data.email)
+        localStorage.setItem("teacherDepartment", data.department)
+
+        toast({
+          title: "Login Successful",
+          description: `Welcome, ${data.name}!`,
+        })
+
+        router.push("/teacher/dashboard")
+      } else {
+        toast({
+          title: "Login Failed",
+          description: data.message || "Invalid credentials",
+          variant: "destructive",
+        })
+      }
+    } catch (err) {
+      console.error("Login error:", err)
       toast({
-        title: "Login Failed",
-        description: data.message || "Invalid credentials",
+        title: "Network Error",
+        description: "Something went wrong.",
         variant: "destructive",
       })
+    } finally {
+      setIsLoading(false)
     }
-  } catch (err) {
-    console.error(err)
-    toast({
-      title: "Network Error",
-      description: "Unable to login. Please try again.",
-      variant: "destructive",
-    })
-  } finally {
-    setIsLoading(false)
   }
-}
 
+  const handleStudentLogin = async () => {
+    setIsLoading(true)
+    try {
+      const res = await fetch("http://localhost:5000/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userType: "student",
+          id: studentCredentials.studentId,
+          password: studentCredentials.password,
+        }),
+      })
 
+      const data = await res.json()
+
+      if (data.success) {
+        localStorage.setItem("studentAuthToken", data.token)
+        localStorage.setItem("userToken", data.token)
+        localStorage.setItem("userType", "student")
+        localStorage.setItem("userName", data.name)
+        localStorage.setItem("studentName", data.name)
+        localStorage.setItem("studentId", data.id)
+        localStorage.setItem("studentGroup", data.group)
+        localStorage.setItem("studentSemester", data.semester)
+
+        toast({
+          title: "Login Successful",
+          description: `Welcome, ${data.name}!`,
+        })
+
+        // Ensure token is set before redirect
+        setTimeout(() => {
+          router.push("/student/portal")
+        }, 50)
+      } else {
+        toast({
+          title: "Login Failed",
+          description: data.message || "Invalid credentials",
+          variant: "destructive",
+        })
+      }
+    } catch (err) {
+      console.error(err)
+      toast({
+        title: "Network Error",
+        description: "Unable to login. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   const fillDemoCredentials = (type: "teacher" | "student") => {
     if (type === "teacher") {

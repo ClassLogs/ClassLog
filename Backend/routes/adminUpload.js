@@ -69,6 +69,7 @@ router.post("/upload-csv", upload.single("csv"), async (req, res) => {
               // Existing teacher: clear previous mappings
               await db.query(`DELETE FROM teacher_groups WHERE teacher_id = ?`, [teacher_id]);
               await db.query(`DELETE FROM teacher_subjects WHERE teacher_id = ?`, [teacher_id]);
+              await db.query(`DELETE FROM teacher_group_subjects WHERE teacher_id = ?`, [teacher_id]);
               console.log(`Updated existing teacher: ${teacher_id}`);
             }
 
@@ -91,12 +92,23 @@ router.post("/upload-csv", upload.single("csv"), async (req, res) => {
                   [teacher_id, subject_name]
                 );
             }
-          }
 
-          res.json({
-            success: true,
-            message: "Teachers uploaded successfully with groups and subjects."
-          });
+            // --- NEW: Insert into teacher_group_subjects ---
+            // If you want one subject per group, map index-wise (first subject to first group)
+            for (let i = 0; i < groupList.length; i++) {
+              const group_name = groupList[i];
+              // Use subject at same index, or the first subject if only one
+              const subject_name = subjectList[i] || subjectList[0] || null;
+              if (group_name && subject_name) {
+                await db.query(
+                  `INSERT INTO teacher_group_subjects (teacher_id, group_name, subject_name)
+                   VALUES (?, ?, ?)`,
+                  [teacher_id, group_name, subject_name]
+                );
+              }
+            }
+          }
+          
         }
 
       } catch (err) {
