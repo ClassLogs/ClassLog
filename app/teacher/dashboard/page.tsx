@@ -57,6 +57,11 @@ export interface Student {
   status: "present" | "absent" | "late" | null // null means not marked for current session
 }
 
+const API_BASE_URL =
+  typeof window !== "undefined" && window.location.hostname === "localhost"
+    ? "http://localhost:5000"
+    : "https://your-render-backend.onrender.com"; // <-- Apna backend URL daalo
+
 export default function TeacherDashboard() {
   const [classes, setClasses] = useState<ClassData[]>([])
   const [selectedClass, setSelectedClass] = useState<ClassData | null>(null)
@@ -74,6 +79,8 @@ export default function TeacherDashboard() {
   const [referenceId, setReferenceId] = useState("") // This is a local ref ID, not from DB
   const [scannerZoom, setScannerZoom] = useState(false)
   const qrContainerRef = useRef<HTMLDivElement>(null)
+  const [students, setStudents] = useState([])
+  
 
   const router = useRouter()
   const { toast } = useToast()
@@ -119,7 +126,7 @@ export default function TeacherDashboard() {
         const newQrValue = `${currentSessionId}_${Date.now()}` // New dynamic QR value
         setQrCodeValue(newQrValue)
         // Call backend to update last_renewed_at
-        fetch("http://localhost:5000/api/renew-qr-session", {
+        fetch(`${API_BASE_URL}/api/renew-qr-session`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ sessionId: currentSessionId }),
@@ -158,7 +165,7 @@ export default function TeacherDashboard() {
   useEffect(() => {
     if (!teacherId) return
 
-    fetch("http://localhost:5000/api/get-teacher-groups", {
+    fetch(`${API_BASE_URL}/api/get-teacher-groups`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ teacherId }),
@@ -186,7 +193,7 @@ const fetchStudentsAndAttendanceStatus = async () => {
 
   try {
     // 1. Fetch all students in the group
-    const studentsRes = await fetch("http://localhost:5000/api/get-group-students", {
+    const studentsRes = await fetch(`${API_BASE_URL}/api/get-group-students`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ groupName: selectedClass.id }),
@@ -206,7 +213,7 @@ const fetchStudentsAndAttendanceStatus = async () => {
 
       // 2. If a session is active, fetch attendance status
       if (currentSessionId) {
-        const statusRes = await fetch("http://localhost:5000/api/get-session-student-status", {
+        const statusRes = await fetch(`${API_BASE_URL}/api/get-session-student-status`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ groupName: selectedClass.id, sessionId: currentSessionId }),
@@ -247,7 +254,7 @@ const fetchStudentsAndAttendanceStatus = async () => {
   const fetchRecentSessions = async () => {
     if (!selectedClass || !teacherId) return
     try {
-      const res = await fetch("http://localhost:5000/api/get-group-sessions", {
+      const res = await fetch(`${API_BASE_URL}/api/get-group-sessions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ teacherId, groupName: selectedClass.id }),
@@ -302,7 +309,7 @@ const fetchStudentsAndAttendanceStatus = async () => {
     }
 
     try {
-      const res = await fetch("http://localhost:5000/api/create-qr-session", {
+      const res = await fetch(`${API_BASE_URL}/api/create-qr-session`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -387,7 +394,7 @@ const fetchStudentsAndAttendanceStatus = async () => {
     }
 
     try {
-      const res = await fetch("http://localhost:5000/api/mark-attendance", {
+      const res = await fetch(`${API_BASE_URL}/api/mark-attendance`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -443,7 +450,7 @@ const fetchStudentsAndAttendanceStatus = async () => {
       // Send all updates in parallel
       await Promise.all(
         updates.map((update) =>
-          fetch("http://localhost:5000/api/mark-attendance", {
+          fetch(`${API_BASE_URL}/api/mark-attendance`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(update),
@@ -485,7 +492,7 @@ const fetchStudentsAndAttendanceStatus = async () => {
     try {
       await Promise.all(
         updates.map((update) =>
-          fetch("http://localhost:5000/api/mark-attendance", {
+          fetch(`${API_BASE_URL}/api/mark-attendance`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(update),

@@ -47,6 +47,9 @@ interface SubjectStats {
   canMiss: number
 }
 
+
+
+
 export default function StudentPortal() {
   const [currentStep, setCurrentStep] = useState(0)
   const [currentDateTime, setCurrentDateTime] = useState("")
@@ -60,6 +63,17 @@ export default function StudentPortal() {
   const [studentId, setStudentId] = useState("")
   const [studentGroup, setStudentGroup] = useState("")
   const [studentSemester, setStudentSemester] = useState("")
+const [students, setStudents] = useState([])
+const [API_BASE_URL, setApiBaseUrl] = useState("")
+
+  useEffect(() => {
+    const baseUrl =
+      window.location.hostname === "localhost"
+        ? "http://localhost:5000"
+        : "https://your-render-backend.onrender.com"
+
+    setApiBaseUrl(baseUrl)
+  }, [])
 
   // Check authentication and load user data
   useEffect(() => {
@@ -119,7 +133,7 @@ export default function StudentPortal() {
     if (!studentId || studentId === "N/A") return
 
     try {
-      const res = await fetch("http://localhost:5000/api/get-student-attendance-with-totals", {
+      const res = await fetch(`${API_BASE_URL}/api/get-student-attendance-with-totals`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ studentId }),
@@ -196,7 +210,7 @@ export default function StudentPortal() {
     }
 
     try {
-      const res = await fetch("http://localhost:5000/api/student-qr-attendance", {
+      const res = await fetch(`${API_BASE_URL}/api/student-qr-attendance`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sessionId, studentId, scannedTimestamp }),

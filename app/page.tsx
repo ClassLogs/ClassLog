@@ -11,9 +11,22 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { useRouter } from "next/navigation"
 import { useToast } from "@/hooks/use-toast"
+import { useEffect } from "react"
 
 export default function LoginPage() {
   
+
+  const [API_BASE_URL, setApiBaseUrl] = useState("")
+  
+
+  useEffect(() => {
+    const url =
+      window.location.hostname === "localhost"
+        ? "http://localhost:5000"
+        : "https://your-render-backend.onrender.com"
+    setApiBaseUrl(url)
+  }, [])
+
   const [teacherCredentials, setTeacherCredentials] = useState({
     email: "",
     password: "",
@@ -29,6 +42,8 @@ export default function LoginPage() {
   const router = useRouter()
   const { toast } = useToast()
 
+  
+
   const handleTeacherLogin = async () => {
     if (!teacherCredentials.email || !teacherCredentials.password) {
       toast({
@@ -41,7 +56,7 @@ export default function LoginPage() {
 
     setIsLoading(true)
     try {
-      const res = await fetch("http://localhost:5000/api/login", {
+      const res = await fetch(`${API_BASE_URL}/api/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -92,7 +107,7 @@ export default function LoginPage() {
   const handleStudentLogin = async () => {
     setIsLoading(true)
     try {
-      const res = await fetch("http://localhost:5000/api/login", {
+      const res = await fetch(`${API_BASE_URL}/api/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
