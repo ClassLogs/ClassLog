@@ -45,7 +45,7 @@ useEffect(() => {
           // Agar user already login hai aur "/" page pe aaya hai to redirect karo
           if (window.location.pathname === "/") {
             if (userType === "student") {
-              window.location.href = "/student/dashboard";
+              window.location.href = "/student/portal";
             } else if (userType === "teacher") {
               window.location.href = "/teacher/dashboard";
             }
