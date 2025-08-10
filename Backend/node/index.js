@@ -5,16 +5,16 @@ const { execFile } = require("child_process")
 
 const app = express()
 const adminUploadRoutes = require("../routes/adminUpload") // Assuming this path is correct
-app.use("/api/admin", adminUploadRoutes)
+
 
 app.use(cors())
-app.use(express.json())
+
 
 const allowedOrigins = [
   "http://localhost:3000",     // Local development
   "https://classlog-virid.vercel.app/"
 ];
-
+app.use(express.json())
 app.use(
   cors({
     origin: function (origin, callback) {
@@ -29,7 +29,7 @@ app.use(
     credentials: true, // if you are using cookies or authentication headers
   })
 );
-
+app.use("/api/admin", adminUploadRoutes)
 // Example route
 app.get("/", (req, res) => {
   res.send("CORS setup working");
