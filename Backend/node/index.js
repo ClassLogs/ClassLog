@@ -12,7 +12,8 @@ app.use(cors())
 
 const allowedOrigins = [
   "http://localhost:3000",     // Local development
-  "https://classlog-virid.vercel.app/"
+  "https://classlog-virid.vercel.app/",
+  "https://classlog-e5h3.onrender.com"
 ];
 app.use(express.json())
 app.use(
