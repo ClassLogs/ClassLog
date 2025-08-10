@@ -7,8 +7,6 @@ const app = express()
 const adminUploadRoutes = require("../routes/adminUpload") // Assuming this path is correct
 
 
-app.use(cors())
-
 
 const allowedOrigins = [
   "http://localhost:3000",     // Local development
@@ -19,6 +17,7 @@ app.use(express.json())
 app.use(
   cors({
     origin: function (origin, callback) {
+      console.log("Incoming Origin:", origin);
       // allow requests with no origin (like mobile apps, Postman)
       if (!origin) return callback(null, true);
       if (allowedOrigins.includes(origin)) {
