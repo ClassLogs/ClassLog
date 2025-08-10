@@ -37,18 +37,20 @@ export interface ClassData {
   name: string // Display name for the class/group
   subject: string // Subject associated with this group for the teacher
   students: number // Total students in this group
-  avgAttendance: number // Average attendance for this group/subject
+  avgAttendance: number | null // Average attendance for this group/subject, can be null
 }
+
 export interface SessionData {
   id: string
   date: string
   time: string
   attendance: number
   total: number
-  percentage: number
+  percentage: number | null // Can be null if no data
   name: string
   subject: string
 }
+
 export interface Student {
   id: string // Database ID of the student
   name: string
@@ -60,31 +62,26 @@ export interface Student {
 const API_BASE_URL =
   typeof window !== "undefined" && window.location.hostname === "localhost"
     ? "http://localhost:5000"
-    : "https://classlog-e5h3.onrender.com" ; 
+    : "https://classlog-e5h3.onrender.com"
 
 export default function TeacherDashboard() {
   const [classes, setClasses] = useState<ClassData[]>([])
   const [selectedClass, setSelectedClass] = useState<ClassData | null>(null)
   const [studentList, setStudentList] = useState<Student[]>([])
   const [recentSessions, setRecentSessions] = useState<SessionData[]>([])
-
   const [sessionActive, setSessionActive] = useState(false)
   const [qrCodeValue, setQrCodeValue] = useState("") // Renamed to avoid conflict with component
   const [currentSessionId, setCurrentSessionId] = useState<number | null>(null) // Store the actual session ID from DB
   const [timeLeft, setTimeLeft] = useState(10)
-  const [studentsPresent, setStudentsPresent] = useState(0) // This is for the QR session live count
-
   const [searchTerm, setSearchTerm] = useState("")
   const [currentDateTime, setCurrentDateTime] = useState("")
   const [referenceId, setReferenceId] = useState("") // This is a local ref ID, not from DB
   const [scannerZoom, setScannerZoom] = useState(false)
   const qrContainerRef = useRef<HTMLDivElement>(null)
   const [students, setStudents] = useState([])
-  
 
   const router = useRouter()
   const { toast } = useToast()
-
   const userName = typeof window !== "undefined" ? localStorage.getItem("userName") || "Teacher" : "Teacher"
   const teacherId = typeof window !== "undefined" ? localStorage.getItem("teacherId") : null
 
@@ -132,11 +129,9 @@ export default function TeacherDashboard() {
           body: JSON.stringify({ sessionId: currentSessionId }),
         }).catch((error) => console.error("Failed to renew QR timestamp:", error))
       }
-
       // Generate initial QR value
       generateNewQrValue()
       setTimeLeft(10)
-
       interval = setInterval(() => {
         setTimeLeft((prev) => {
           if (prev === 1) {
@@ -147,7 +142,6 @@ export default function TeacherDashboard() {
         })
       }, 1000)
     }
-
     return () => {
       if (interval) clearInterval(interval)
     }
@@ -164,7 +158,6 @@ export default function TeacherDashboard() {
   // Fetch teacher's groups from backend
   useEffect(() => {
     if (!teacherId) return
-
     fetch(`${API_BASE_URL}/api/get-teacher-groups`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -177,8 +170,8 @@ export default function TeacherDashboard() {
             id: grp.group_name,
             name: `Group ${grp.group_name}`,
             subject: grp.subject_name || "General",
-            students: 0, // Will be updated by get-group-students
-            avgAttendance: 0, // Will be updated by analytics
+            students: grp.total_students ?? 0, // Use backend's total_students if available
+            avgAttendance: typeof grp.avg_attendance === "number" ? grp.avg_attendance : null, // Use backend's avg_attendance for the class, allow null
           }))
           setClasses(fetchedClasses)
           setSelectedClass(fetchedClasses[0]) // Select the first class by default
@@ -188,67 +181,75 @@ export default function TeacherDashboard() {
   }, [teacherId])
 
   // Fetch students for the selected group and their attendance status for the current session
-const fetchStudentsAndAttendanceStatus = async () => {
-  if (!selectedClass) return;
-
-  try {
-    // 1. Fetch all students in the group
-    const studentsRes = await fetch(`${API_BASE_URL}/api/get-group-students`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ groupName: selectedClass.id }),
-    });
-
-    const studentsData = await studentsRes.json();
-
-    if (studentsData.success) {
-      // Convert DB keys to consistent camelCase
-      let studentsFetched: Student[] = studentsData.students.map((stu: any) => ({
-        id: String(stu.id),
-        name: stu.name,
-        rollNumber: String(stu.roll_no), // ensure string type
-        email: stu.email,
-        status: null, // default before fetching attendance
-      }));
-
-      // 2. If a session is active, fetch attendance status
-      if (currentSessionId) {
-        const statusRes = await fetch(`${API_BASE_URL}/api/get-session-student-status`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ groupName: selectedClass.id, sessionId: currentSessionId }),
-        });
-
-        const statusData = await statusRes.json();
-
-        if (statusData.success) {
-  const statusMap = new Map<string, "present" | "absent" | "late">(
-    statusData.students.map((s: any) => [String(s.roll_no), s.status])
-  );
-
-  studentsFetched = studentsFetched.map((student) => ({
-    ...student,
-    status: (statusMap.get(student.rollNumber) as "present" | "absent" | "late" | null) ?? null,
-  }));
-}
-
+  const fetchStudentsAndAttendanceStatus = async () => {
+    if (!selectedClass) return
+    try {
+      // 1. Fetch all students in the group
+      const studentsRes = await fetch(`${API_BASE_URL}/api/get-group-students`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ groupName: selectedClass.id }),
+      })
+      const studentsData = await studentsRes.json()
+      if (studentsData.success) {
+        // Convert DB keys to consistent camelCase
+        let studentsFetched: Student[] = studentsData.students.map((stu: any) => ({
+          id: String(stu.id),
+          name: stu.name,
+          rollNumber: String(stu.roll_no), // ensure string type
+          email: stu.email,
+          status: null, // default before fetching attendance
+        }))
+        // 2. If a session is active, fetch attendance status
+        if (currentSessionId) {
+          const statusRes = await fetch(`${API_BASE_URL}/api/get-session-student-status`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ groupName: selectedClass.id, sessionId: currentSessionId }),
+          })
+          const statusData = await statusRes.json()
+          if (statusData.success) {
+            const statusMap = new Map<string, "present" | "absent" | "late">(
+              statusData.students.map((s: any) => [String(s.roll_no), s.status]),
+            )
+            studentsFetched = studentsFetched.map((student) => ({
+              ...student,
+              status: (statusMap.get(student.rollNumber) as "present" | "absent" | "late" | null) ?? null,
+            }))
+          }
+        }
+        // 3. Update state
+        setStudentList(studentsFetched)
+        setSelectedClass((prev) => (prev ? { ...prev, students: studentsFetched.length } : null))
       }
-
-      // 3. Update state
-      setStudentList(studentsFetched);
-      setSelectedClass((prev) =>
-        prev ? { ...prev, students: studentsFetched.length } : null
-      );
+    } catch (err) {
+      console.error("Error fetching students or attendance status:", err)
     }
-  } catch (err) {
-    console.error("Error fetching students or attendance status:", err);
   }
-};
-
 
   useEffect(() => {
     fetchStudentsAndAttendanceStatus()
   }, [selectedClass, currentSessionId]) // Re-fetch when class or active session changes
+
+  // NEW: Polling for attendance status when a session is active
+  useEffect(() => {
+    let attendancePollingInterval: NodeJS.Timeout | undefined
+    if (sessionActive && currentSessionId && selectedClass) {
+      // Fetch immediately when session starts or currentSessionId changes
+      fetchStudentsAndAttendanceStatus()
+
+      // Then poll every few seconds
+      attendancePollingInterval = setInterval(() => {
+        fetchStudentsAndAttendanceStatus()
+      }, 5000) // Poll every 5 seconds
+    }
+
+    return () => {
+      if (attendancePollingInterval) {
+        clearInterval(attendancePollingInterval)
+      }
+    }
+  }, [sessionActive, currentSessionId, selectedClass]) // Use selectedClass directly
 
   // Fetch recent sessions for the selected group
   const fetchRecentSessions = async () => {
@@ -267,7 +268,7 @@ const fetchStudentsAndAttendanceStatus = async () => {
           time: "", // Backend doesn't provide time for session creation, only date
           attendance: session.avg_attendance ?? 0,
           total: 0, // You can add total students if you store that
-          percentage: session.avg_attendance ?? 0,
+          percentage: typeof session.avg_attendance === "number" ? session.avg_attendance : null, // Assign null if backend sends null/undefined
           name: session.name,
           subject: session.subject,
         }))
@@ -307,7 +308,6 @@ const fetchStudentsAndAttendanceStatus = async () => {
       })
       return
     }
-
     try {
       const res = await fetch(`${API_BASE_URL}/api/create-qr-session`, {
         method: "POST",
@@ -321,11 +321,9 @@ const fetchStudentsAndAttendanceStatus = async () => {
         }),
       })
       const data = await res.json()
-
       if (data.success) {
         setCurrentSessionId(data.sessionId) // Store the actual session ID
         setSessionActive(true)
-        setStudentsPresent(0) // Reset student present count for new session
         toast({
           title: "Session Started",
           description: `QR session started for ${selectedClass.subject} - ${selectedClass.name}`,
@@ -364,8 +362,9 @@ const fetchStudentsAndAttendanceStatus = async () => {
 
   // Simulate attendance (for demo purposes, doesn't hit backend)
   const simulateAttendance = () => {
-    if (selectedClass && studentsPresent < selectedClass.students) {
-      setStudentsPresent((prev) => prev + 1)
+    if (selectedClass && studentList.filter((s) => s.status === "present").length < selectedClass.students) {
+      // This function is for demo purposes and will not directly update the studentList
+      // The actual updates will come from the polling mechanism
       toast({
         title: "Student Scanned (Demo)",
         description: "A student has marked their attendance (simulated).",
@@ -383,7 +382,6 @@ const fetchStudentsAndAttendanceStatus = async () => {
       })
       return
     }
-
     let newStatus: "present" | "absent" = "present"
     if (currentStatus === "present") {
       newStatus = "absent"
@@ -392,7 +390,6 @@ const fetchStudentsAndAttendanceStatus = async () => {
     } else {
       newStatus = "present" // Default to present if null
     }
-
     try {
       const res = await fetch(`${API_BASE_URL}/api/mark-attendance`, {
         method: "POST",
@@ -439,13 +436,11 @@ const fetchStudentsAndAttendanceStatus = async () => {
       })
       return
     }
-
     const updates = studentList.map((student) => ({
       studentRollNo: student.rollNumber,
       sessionId: currentSessionId,
       status: "present",
     }))
-
     try {
       // Send all updates in parallel
       await Promise.all(
@@ -482,13 +477,11 @@ const fetchStudentsAndAttendanceStatus = async () => {
       })
       return
     }
-
     const updates = studentList.map((student) => ({
       studentRollNo: student.rollNumber,
       sessionId: currentSessionId,
       status: "absent", // Resetting means marking them absent
     }))
-
     try {
       await Promise.all(
         updates.map((update) =>
@@ -739,11 +732,11 @@ const fetchStudentsAndAttendanceStatus = async () => {
                         <div className="flex justify-between text-sm">
                           <span>Students Present</span>
                           <span className="font-semibold">
-                            {studentsPresent}/{selectedClass?.students || 0}
+                            {presentCount}/{selectedClass?.students || 0}
                           </span>
                         </div>
                         <Progress
-                          value={selectedClass ? (studentsPresent / selectedClass.students) * 100 : 0}
+                          value={selectedClass ? (presentCount / selectedClass.students) * 100 : 0}
                           className="h-3"
                         />
                         <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
@@ -829,7 +822,9 @@ const fetchStudentsAndAttendanceStatus = async () => {
                               <div className="text-xs text-gray-500">{session.name}</div>
                             </div>
                             <div className="text-right">
-                              <div className="text-sm font-medium">{session.percentage.toFixed(1)}%</div>
+                              <div className="text-sm font-medium">
+                                {session.percentage !== null ? `${session.percentage.toFixed(1)}%` : "N/A"}
+                              </div>
                               <div className="text-xs text-gray-500">{session.subject}</div>
                             </div>
                           </motion.div>
@@ -1012,7 +1007,9 @@ const fetchStudentsAndAttendanceStatus = async () => {
                           <div className="text-sm text-gray-500">{cls.students} students</div>
                         </div>
                         <div className="text-right">
-                          <div className="font-bold text-lg">{cls.avgAttendance.toFixed(1)}%</div>
+                          <div className="font-bold text-lg">
+                            {cls.avgAttendance !== null ? `${cls.avgAttendance.toFixed(1)}%` : "N/A"}
+                          </div>
                           <div className="text-xs text-gray-500">Average</div>
                         </div>
                       </div>

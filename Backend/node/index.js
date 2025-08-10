@@ -25,7 +25,7 @@ app.use(express.json())
 app.use(
   cors({
     origin: function (origin, callback) {
-      console.log("Incoming Origin:", origin);
+      // console.log("Incoming Origin:", origin);
       // allow requests with no origin (like mobile apps, Postman)
       if (!origin) return callback(null, true);
       if (allowedOrigins.includes(origin)) {
