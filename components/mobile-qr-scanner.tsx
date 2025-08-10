@@ -21,7 +21,7 @@ import { useToast } from "@/hooks/use-toast"
 import { motion, AnimatePresence } from "framer-motion"
 
 // Dynamically import jsQR with ssr: false
-import jsQR from "jsQR"
+import jsQR from "jsqr"
 
 interface QRScannerProps {
   onScanSuccess?: (result: string) => void
