@@ -275,10 +275,10 @@ const [API_BASE_URL, setApiBaseUrl] = useState("")
             <div className="flex items-center gap-4">
               <div className="hidden md:block text-sm text-gray-600 dark:text-gray-400">{currentDateTime}</div>
               <ThemeToggle />
-              <Button variant="outline" size="sm" onClick={handleLogout}>
+              {/* <Button variant="outline" size="sm" onClick={handleLogout}>
                 <LogOut className="w-4 h-4 mr-2" />
                 Logout
-              </Button>
+              </Button> */}
             </div>
           </div>
         </div>
@@ -629,10 +629,10 @@ const [API_BASE_URL, setApiBaseUrl] = useState("")
                     <User className="w-5 h-5 mr-3" />
                     Update Profile
                   </Button>
-                  <Button variant="destructive" className="w-full justify-start h-12" onClick={handleLogout}>
+                  {/* <Button variant="destructive" className="w-full justify-start h-12" onClick={handleLogout}>
                     <LogOut className="w-5 h-5 mr-3" />
                     Logout
-                  </Button>
+                  </Button> */}
                 </CardContent>
               </Card>
             </div>
