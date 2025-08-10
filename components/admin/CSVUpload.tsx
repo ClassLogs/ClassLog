@@ -7,7 +7,15 @@ import { useToast } from "@/hooks/use-toast"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useEffect } from "react"
-const [API_BASE_URL, setApiBaseUrl] = useState("")
+
+
+const CSVUploader = () => {
+  const [file, setFile] = useState<File | null>(null)
+  const [userType, setUserType] = useState<"student" | "teacher" | "">("")
+  const { toast } = useToast()
+
+
+  const [API_BASE_URL, setApiBaseUrl] = useState("")
   
 
   useEffect(() => {
@@ -18,11 +26,6 @@ const [API_BASE_URL, setApiBaseUrl] = useState("")
     setApiBaseUrl(url)
   }, [])
 
-
-const CSVUploader = () => {
-  const [file, setFile] = useState<File | null>(null)
-  const [userType, setUserType] = useState<"student" | "teacher" | "">("")
-  const { toast } = useToast()
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
