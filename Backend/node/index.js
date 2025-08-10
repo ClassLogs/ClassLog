@@ -6,6 +6,11 @@ const { execFile } = require("child_process")
 const app = express()
 const adminUploadRoutes = require("../routes/adminUpload") // Assuming this path is correct
 
+const jwt = require("jsonwebtoken");
+const generatePassword = require("generate-password");
+
+// Secret key for JWT (store securely in env)
+const JWT_SECRET = process.env.JWT_SECRET || "your_jwt_secret_here";
 
 
 const allowedOrigins = [
@@ -60,6 +65,54 @@ db.getConnection()
     process.exit(1)
   })
 
+
+
+
+function authenticateToken(req, res, next) {
+  const authHeader = req.headers["authorization"];
+  const token = authHeader && authHeader.split(" ")[1];
+  if (!token) {
+    return res.status(401).json({ success: false, message: "No token provided" });
+  }
+
+  jwt.verify(token, JWT_SECRET, (err, user) => {
+    if (err) {
+      return res.status(403).json({ success: false, message: "Invalid token" });
+    }
+    req.user = user;
+    next();
+  });
+}
+
+// Route: Logged-in user ka data
+app.get("/api/user", authenticateToken, async (req, res) => {
+  try {
+    const { userType, id } = req.user;
+
+    let query, params;
+    if (userType === "student") {
+      query = "SELECT roll_no AS id, name, email, group_name, semester FROM students WHERE roll_no = ?";
+      params = [id];
+    } else if (userType === "teacher") {
+      query = "SELECT teacher_id AS id, name, email, department FROM teachers WHERE teacher_id = ?";
+      params = [id];
+    } else {
+      return res.status(400).json({ success: false, message: "Invalid user type" });
+    }
+
+    const [results] = await db.query(query, params);
+    if (results.length === 0) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    return res.json({ success: true, user: results[0] });
+  } catch (err) {
+    console.error("Error in /api/user:", err);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
+
 // Helper function to update session attendance percentage
 async function updateSessionAttendance(sessionId) {
   try {
@@ -97,51 +150,91 @@ async function updateSessionAttendance(sessionId) {
 }
 
 // 🎯 Login API
-app.post("/api/login", async (req, res) => {
-  const { userType, id, email, password } = req.body
 
-  if (!userType || !password || (userType === "student" && !id) || (userType === "teacher" && !email)) {
-    return res.status(400).json({ success: false, message: "Missing credentials" })
+
+app.post("/api/login", async (req, res) => {
+  const { userType, id, email, password } = req.body;
+
+  if (
+    !userType ||
+    !password ||
+    (userType === "student" && !id) ||
+    (userType === "teacher" && !email)
+  ) {
+    return res.status(400).json({ success: false, message: "Missing credentials" });
   }
 
-  const table = userType === "student" ? "students" : "teachers"
-  const idField = userType === "student" ? "roll_no" : "email" // Use roll_no for students
-
-  const identifier = userType === "student" ? id : email
-
-  const query = `SELECT * FROM ${table} WHERE ${idField} = ? AND password = ?`
+  const table = userType === "student" ? "students" : "teachers";
+  const idField = userType === "student" ? "roll_no" : "email";
+  const identifier = userType === "student" ? id : email;
 
   try {
-    const [results] = await db.query(query, [identifier, password])
+    const [results] = await db.query(
+      `SELECT * FROM ${table} WHERE ${idField} = ? AND password = ?`,
+      [identifier, password]
+    );
 
-    if (results.length === 1) {
-      const user = results[0]
-
-      const response = {
-        success: true,
-        token: "mock-token", // Replace with JWT if needed
-        name: user.name,
-        email: user.email,
-      }
-
-      if (userType === "student") {
-        response.id = user.roll_no // Use roll_no as the student ID
-        response.group = user.group_name
-        response.semester = user.semester
-      } else {
-        response.id = user.teacher_id
-        response.department = user.department
-      }
-
-      return res.json(response)
-    } else {
-      return res.status(401).json({ success: false, message: "Invalid credentials" })
+    if (results.length !== 1) {
+      return res.status(401).json({ success: false, message: "Invalid credentials" });
     }
+
+    const user = results[0];
+
+    // For students, check if password_changed field exists (add in DB!)
+    if (userType === "student") {
+      
+        // Change password immediately to random one user doesn't know
+        const newPassword = generatePassword.generate({
+          length: 6,
+          numbers: false,
+          symbols: false,
+          uppercase: true,
+          lowercase: true,
+        });
+
+await db.query(
+  "UPDATE students SET password = ?, password_changed = NOW() WHERE roll_no = ?",
+  [newPassword, user.roll_no]
+);
+
+        // Optionally log or email newPassword to admin (for re-issuing passwords)
+      
+    }
+
+    // Generate JWT token with user info and userType
+    const tokenPayload = {
+      userType,
+      id: userType === "student" ? user.roll_no : user.teacher_id,
+      email: user.email,
+      name: user.name,
+    };
+
+    const token = jwt.sign(tokenPayload, JWT_SECRET, { expiresIn: "7d" });
+
+    // Return user info and token
+    const response = {
+      success: true,
+      token,
+      name: user.name,
+      email: user.email,
+    };
+
+    if (userType === "student") {
+      response.id = user.roll_no;
+      response.group = user.group_name;
+      response.semester = user.semester;
+    } else {
+      response.id = user.teacher_id;
+      response.department = user.department;
+    }
+
+    return res.json(response);
   } catch (err) {
-    console.error("❌ DB Error during login:", err)
-    return res.status(500).json({ success: false, message: "Internal server error" })
+    console.error("❌ DB Error during login:", err);
+    return res.status(500).json({ success: false, message: "Internal server error" });
   }
-})
+});
+
 
 // Get teacher's groups and subjects
 app.post("/api/get-teacher-groups", async (req, res) => {

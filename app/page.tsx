@@ -27,6 +27,36 @@ export default function LoginPage() {
     setApiBaseUrl(url)
   }, [])
 
+const [user, setUser] = useState(null); 
+  // App.js ya kisi global layout file me
+useEffect(() => {
+  const token = localStorage.getItem("userToken");
+  const userType = localStorage.getItem("userType");
+
+  if (token) {
+    fetch(`${API_BASE_URL}/api/user`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (data.success) {
+        if (window.location.pathname === "/") {
+          if (userType === "student") {
+            window.location.href = "/student/dashboard";
+          } else if (userType === "teacher") {
+            window.location.href = "/teacher/dashboard";
+          }
+        }
+      } else {
+        localStorage.removeItem("userToken");
+        localStorage.removeItem("userType");
+      }
+    });
+  }
+}, []);
+
+
+
   const [teacherCredentials, setTeacherCredentials] = useState({
     email: "",
     password: "",
