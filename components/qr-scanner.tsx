@@ -20,7 +20,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
 import { motion, AnimatePresence } from "framer-motion"
-import jsQR from "jsQR"
+import jsQR from "jsqr"
 
 interface QRScannerProps {
   onScanSuccess?: (result: string) => void
