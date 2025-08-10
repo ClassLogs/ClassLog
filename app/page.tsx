@@ -23,7 +23,7 @@ export default function LoginPage() {
     const url =
       window.location.hostname === "localhost"
         ? "http://localhost:5000"
-        : "https://github.com/ClassLogs/ClassLog"
+        : "https://classlog-e5h3.onrender.com" ; 
     setApiBaseUrl(url)
   }, [])
 
