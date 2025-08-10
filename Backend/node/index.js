@@ -9,10 +9,13 @@ const adminUploadRoutes = require("../routes/adminUpload") // Assuming this path
 
 
 const allowedOrigins = [
-  "http://localhost:3000",     // Local development
-  "https://classlog-virid.vercel.app/",
-  "https://classlog-e5h3.onrender.com"
+  "http://localhost:3000", // Local development
+  "https://classlog-virid.vercel.app", // Added this line (without trailing slash)
+  "https://classlog-virid.vercel.app/", // Keep this line (with trailing slash)
+  "https://classlog-e5h3.onrender.com",
 ];
+
+
 app.use(express.json())
 app.use(
   cors({
