@@ -6,6 +6,18 @@ import { Input } from "@/components/ui/input"
 import { useToast } from "@/hooks/use-toast"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { useEffect } from "react"
+const [API_BASE_URL, setApiBaseUrl] = useState("")
+  
+
+  useEffect(() => {
+    const url =
+      window.location.hostname === "localhost"
+        ? "http://localhost:5000"
+        : "https://classlog-e5h3.onrender.com" ; 
+    setApiBaseUrl(url)
+  }, [])
+
 
 const CSVUploader = () => {
   const [file, setFile] = useState<File | null>(null)
@@ -29,7 +41,7 @@ const CSVUploader = () => {
     formData.append("type", userType)
 
     try {
-      const res = await fetch("http://localhost:5000/api/admin/upload-csv", {
+      const res = await fetch(`${API_BASE_URL}/api/admin/upload-csv`, {
         method: "POST",
         body: formData,
       })
