@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useState, useEffect, useRef, useCallback } from "react"
 import {
   Camera,
@@ -20,6 +19,8 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
 import { motion, AnimatePresence } from "framer-motion"
+
+// Dynamically import jsQR with ssr: false
 import jsQR from "jsQR"
 
 interface QRScannerProps {
@@ -113,7 +114,13 @@ export function MobileQRScanner({
 
         const initialCamera = backCamera || frontCamera || videoDevices[0]
         setCurrentCameraId(initialCamera.deviceId)
-        setCameraFacing(backCamera ? "environment" : "user")
+        setCameraFacing(
+          initialCamera.label.toLowerCase().includes("back") ||
+            initialCamera.label.toLowerCase().includes("rear") ||
+            initialCamera.label.toLowerCase().includes("environment")
+            ? "environment"
+            : "user",
+        )
         console.log(
           "initializeMediaDevices: Initial camera selected:",
           initialCamera.label,
@@ -370,7 +377,7 @@ export function MobileQRScanner({
   )
 
   const scanForQR = useCallback(() => {
-    if (!videoRef.current || !canvasRef.current || !isScanning || !isPlaying) return // Only scan if video is playing
+    if (!videoRef.current || !canvasRef.current || !isScanning || !isPlaying || !jsQR) return // Only scan if video is playing and jsQR is loaded
 
     const video = videoRef.current
     const canvas = canvasRef.current
@@ -397,7 +404,7 @@ export function MobileQRScanner({
     } else {
       // console.log("scanForQR: No QR code found.");
     }
-  }, [isScanning, isPlaying, handleScanSuccess])
+  }, [isScanning, isPlaying, handleScanSuccess, jsQR]) // Added jsQR to dependencies
 
   const startQRScanning = useCallback(() => {
     console.log("startQRScanning: Starting QR scanning interval.")
