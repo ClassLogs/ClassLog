@@ -12,7 +12,7 @@ app.use(express.json())
 
 const allowedOrigins = [
   "http://localhost:3000",     // Local development
-  "https://your-deployed-site.vercel.app" // Deployed frontend
+  "https://classlogss.vercel.app/"
 ];
 
 app.use(
