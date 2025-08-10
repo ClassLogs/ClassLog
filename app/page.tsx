@@ -157,19 +157,19 @@ export default function LoginPage() {
     }
   }
 
-  const fillDemoCredentials = (type: "teacher" | "student") => {
-    if (type === "teacher") {
-      setTeacherCredentials({
-        email: "teacher@school.edu",
-        password: "password123",
-      })
-    } else {
-      setStudentCredentials({
-        studentId: "STU001",
-        password: "student123",
-      })
-    }
-  }
+  // const fillDemoCredentials = (type: "teacher" | "student") => {
+  //   if (type === "teacher") {
+  //     setTeacherCredentials({
+  //       email: "teacher@school.edu",
+  //       password: "password123",
+  //     })
+  //   } else {
+  //     setStudentCredentials({
+  //       studentId: "STU001",
+  //       password: "student123",
+  //     })
+  //   }
+  // }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 flex items-center justify-center p-4">
@@ -260,14 +260,7 @@ export default function LoginPage() {
                   {isLoading ? "Signing In..." : "Sign In as Teacher"}
                 </Button>
                 <div className="text-center">
-                  <Button
-                    variant="link"
-                    size="sm"
-                    onClick={() => fillDemoCredentials("teacher")}
-                    className="text-xs text-blue-600 hover:text-blue-700"
-                  >
-                    Use Demo Credentials
-                  </Button>
+
                 </div>
               </TabsContent>
 
@@ -313,14 +306,7 @@ export default function LoginPage() {
                   {isLoading ? "Signing In..." : "Sign In as Student"}
                 </Button>
                 <div className="text-center">
-                  <Button
-                    variant="link"
-                    size="sm"
-                    onClick={() => fillDemoCredentials("student")}
-                    className="text-xs text-green-600 hover:text-green-700"
-                  >
-                    Use Demo Credentials
-                  </Button>
+
                 </div>
               </TabsContent>
             </Tabs>
@@ -328,7 +314,7 @@ export default function LoginPage() {
         </Card>
 
         {/* Demo Credentials Info */}
-        <motion.div
+        {/* <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.8 }}
@@ -343,7 +329,7 @@ export default function LoginPage() {
               <strong>Student:</strong> STU001 / student123
             </p>
           </div>
-        </motion.div>
+        </motion.div> */}
       </motion.div>
     </div>
   )
