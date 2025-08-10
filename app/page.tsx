@@ -17,7 +17,7 @@ export default function LoginPage() {
   
 
   const [API_BASE_URL, setApiBaseUrl] = useState("")
-  
+  const [user, setUser] = useState(null); 
 
   useEffect(() => {
     const url =
@@ -27,33 +27,41 @@ export default function LoginPage() {
     setApiBaseUrl(url)
   }, [])
 
-const [user, setUser] = useState(null); 
+
   // App.js ya kisi global layout file me
 useEffect(() => {
+  if (!API_BASE_URL) return; // API_BASE_URL set hone ka wait kare
+
   const token = localStorage.getItem("userToken");
   const userType = localStorage.getItem("userType");
 
   if (token) {
     fetch(`${API_BASE_URL}/api/user`, {
-      headers: { Authorization: `Bearer ${token}` }
+      headers: { Authorization: `Bearer ${token}` },
     })
-    .then(res => res.json())
-    .then(data => {
-      if (data.success) {
-        if (window.location.pathname === "/") {
-          if (userType === "student") {
-            window.location.href = "/student/dashboard";
-          } else if (userType === "teacher") {
-            window.location.href = "/teacher/dashboard";
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success) {
+          // Agar user already login hai aur "/" page pe aaya hai to redirect karo
+          if (window.location.pathname === "/") {
+            if (userType === "student") {
+              window.location.href = "/student/dashboard";
+            } else if (userType === "teacher") {
+              window.location.href = "/teacher/dashboard";
+            }
           }
+          setUser(data.user);
+        } else {
+          localStorage.removeItem("userToken");
+          localStorage.removeItem("userType");
         }
-      } else {
+      })
+      .catch(() => {
         localStorage.removeItem("userToken");
         localStorage.removeItem("userType");
-      }
-    });
+      });
   }
-}, []);
+}, [API_BASE_URL]);
 
 
 
