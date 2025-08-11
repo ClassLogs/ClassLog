@@ -30,7 +30,6 @@ import { ThemeToggle } from "@/components/theme-toggle"
 import { QRCodeSVG } from "qrcode.react"
 import { useRouter } from "next/navigation"
 import { useToast } from "@/hooks/use-toast"
-import { exportToExcel } from "@/utils/exportToExcel" // Import the exportToExcel function
 
 export interface ClassData {
   id: string // This will be the group_name
@@ -516,6 +515,129 @@ export default function TeacherDashboard() {
 
   const presentCount = studentList.filter((s) => s.status === "present").length
 
+  // Added comprehensive CSV export function for attendance data
+  const exportAttendanceToCSV = async () => {
+    if (!selectedClass || !teacherId) {
+      toast({
+        title: "Error",
+        description: "Please select a class to export attendance data.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    try {
+      // Fetch all sessions for the selected class
+      const sessionsRes = await fetch(`${API_BASE_URL}/api/get-group-sessions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ teacherId, groupName: selectedClass.id }),
+      })
+      const sessionsData = await sessionsRes.json()
+
+      if (!sessionsData.success) {
+        toast({
+          title: "Error",
+          description: "Failed to fetch session data.",
+          variant: "destructive",
+        })
+        return
+      }
+
+      // Fetch all students in the group
+      const studentsRes = await fetch(`${API_BASE_URL}/api/get-group-students`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ groupName: selectedClass.id }),
+      })
+      const studentsData = await studentsRes.json()
+
+      if (!studentsData.success) {
+        toast({
+          title: "Error",
+          description: "Failed to fetch student data.",
+          variant: "destructive",
+        })
+        return
+      }
+
+      const sessions = sessionsData.sessions
+      const students = studentsData.students
+
+      // Fetch attendance data for each session
+      const attendanceData = new Map<string, Map<string, string>>() // sessionId -> rollNo -> status
+
+      for (const session of sessions) {
+        const attendanceRes = await fetch(`${API_BASE_URL}/api/get-session-student-status`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ groupName: selectedClass.id, sessionId: session.id }),
+        })
+        const attendanceResult = await attendanceRes.json()
+
+        if (attendanceResult.success) {
+          const sessionAttendance = new Map<string, string>()
+          attendanceResult.students.forEach((student: any) => {
+            sessionAttendance.set(String(student.roll_no), student.status === "present" ? "Present" : "Absent")
+          })
+          attendanceData.set(String(session.id), sessionAttendance)
+        }
+      }
+
+      // Create CSV content
+      const csvRows: string[] = []
+
+      // Header row with session dates
+      const sessionDates = sessions.map((session: any) => new Date(session.date).toLocaleDateString("en-IN"))
+      const headerRow = ["Student Name", "Roll Number", ...sessionDates]
+      csvRows.push(headerRow.join(","))
+
+      // Data rows for each student
+      students.forEach((student: any) => {
+        const row = [
+          `"${student.name}"`, // Wrap in quotes to handle commas in names
+          String(student.roll_no),
+        ]
+
+        // Add attendance status for each session
+        sessions.forEach((session: any) => {
+          const sessionAttendance = attendanceData.get(String(session.id))
+          const status = sessionAttendance?.get(String(student.roll_no)) || "Absent"
+          row.push(status)
+        })
+
+        csvRows.push(row.join(","))
+      })
+
+      // Create and download CSV file
+      const csvContent = csvRows.join("\n")
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
+      const link = document.createElement("a")
+
+      if (link.download !== undefined) {
+        const url = URL.createObjectURL(blob)
+        link.setAttribute("href", url)
+        link.setAttribute("download", `${selectedClass.name}_Attendance_${new Date().toISOString().slice(0, 10)}.csv`)
+        link.style.visibility = "hidden"
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+      }
+
+      toast({
+        title: "Export Successful",
+        description: `Attendance data exported for ${students.length} students across ${sessions.length} sessions.`,
+      })
+    } catch (err) {
+      console.error("Error exporting attendance data:", err)
+      toast({
+        title: "Error",
+        description: "Failed to export attendance data.",
+        variant: "destructive",
+      })
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       {/* Header */}
@@ -800,7 +922,7 @@ export default function TeacherDashboard() {
                   <CardHeader>
                     <div className="flex items-center justify-between">
                       <CardTitle>Recent Sessions</CardTitle>
-                      <Button onClick={() => exportToExcel(recentSessions, selectedClass)} variant="outline" size="sm">
+                      <Button onClick={exportAttendanceToCSV} variant="outline" size="sm">
                         <Download className="w-4 h-4 mr-2" />
                         Export Excel
                       </Button>
@@ -1024,7 +1146,7 @@ export default function TeacherDashboard() {
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <Button
-                    onClick={() => exportToExcel(recentSessions, selectedClass)}
+                    onClick={exportAttendanceToCSV}
                     className="w-full justify-start h-12 bg-transparent"
                     variant="outline"
                   >
