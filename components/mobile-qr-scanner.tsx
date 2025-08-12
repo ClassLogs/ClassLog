@@ -882,7 +882,7 @@ export function MobileQRScanner({
             )}
 
             <div className="flex gap-2">
-              <Button
+              {/* <Button
                 onClick={flipCamera}
                 variant="outline"
                 className="flex-1 h-10 bg-transparent"
@@ -890,9 +890,9 @@ export function MobileQRScanner({
               >
                 <RotateCcw className="w-4 h-4 mr-2" />
                 Flip Camera
-              </Button>
+              </Button> */}
 
-              <Button
+              {/* <Button
                 onClick={demoScan}
                 variant="outline"
                 className="flex-1 h-10 bg-transparent"
@@ -900,7 +900,7 @@ export function MobileQRScanner({
               >
                 <CheckCircle className="w-4 h-4 mr-2" />
                 Demo Scan
-              </Button>
+              </Button> */}
 
               <Button onClick={resetScanner} variant="outline" className="flex-1 h-10 bg-transparent">
                 <RefreshCw className="w-4 h-4 mr-2" />
