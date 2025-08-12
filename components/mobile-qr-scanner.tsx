@@ -13,10 +13,13 @@ import {
   Loader2,
   Mic,
   PlayCircle,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Slider } from "@/components/ui/slider"
 import { useToast } from "@/hooks/use-toast"
 import { motion, AnimatePresence } from "framer-motion"
 
@@ -68,10 +71,41 @@ export function MobileQRScanner({
   const [isPlaying, setIsPlaying] = useState(false) // New state to track if video is actually playing
   const [videoElementError, setVideoElementError] = useState<MediaError | null>(null) // New state for video element errors
 
+  const [zoomLevel, setZoomLevel] = useState(1) // Zoom level from 1x to 5x
+  const [showZoomControls, setShowZoomControls] = useState(false) // Show zoom controls when camera is active
+
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const scanIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const { toast } = useToast()
+
+  const cleanupStream = useCallback(() => {
+    console.log("cleanupStream: Cleaning up all media resources")
+
+    if (scanIntervalRef.current) {
+      clearInterval(scanIntervalRef.current)
+      scanIntervalRef.current = null
+    }
+
+    if (stream) {
+      stream.getTracks().forEach((track) => {
+        track.stop()
+        console.log(`Cleanup stopped ${track.kind} track:`, track.label)
+      })
+      setStream(null)
+    }
+
+    if (videoRef.current) {
+      videoRef.current.srcObject = null
+      videoRef.current.oncanplay = null
+      videoRef.current.onerror = null
+    }
+
+    setIsScanning(false)
+    setIsPlaying(false)
+    setVideoReadyState(0)
+    setMediaStreamStatus("idle")
+  }, [stream])
 
   // Function to handle initial media device setup and permissions
   const initializeMediaDevices = useCallback(async () => {
@@ -81,13 +115,27 @@ export function MobileQRScanner({
     setError(null) // Clear general error on re-initialization
     setMediaStreamStatus("initializing_devices")
     try {
-      // Request permission by trying to access both camera and microphone
-      console.log("initializeMediaDevices: Requesting temporary user media for permission check (video and audio)...")
-      const tempStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-      tempStream.getTracks().forEach((track) => track.stop()) // Stop the temporary stream immediately
-      console.log(
-        "initializeMediaDevices: Temporary user media access successful. Permissions granted for video and audio.",
-      )
+      const permissions = await Promise.allSettled([
+        navigator.permissions?.query({ name: "camera" as PermissionName }),
+        navigator.permissions?.query({ name: "microphone" as PermissionName }),
+      ])
+
+      const cameraPermission = permissions[0].status === "fulfilled" ? permissions[0].value.state : "prompt"
+      const micPermission = permissions[1].status === "fulfilled" ? permissions[1].value.state : "prompt"
+
+      // Only request temporary stream if we don't have permissions yet
+      if (cameraPermission === "prompt" || micPermission === "prompt") {
+        console.log("initializeMediaDevices: Requesting temporary user media for permission check...")
+        const tempStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+
+        tempStream.getTracks().forEach((track) => {
+          track.stop()
+          console.log(`Stopped ${track.kind} track:`, track.label)
+        })
+
+        await new Promise((resolve) => setTimeout(resolve, 100))
+        console.log("initializeMediaDevices: Temporary stream cleaned up with delay")
+      }
 
       setCameraPermissionGranted(true)
       setMicrophonePermissionGranted(true)
@@ -136,15 +184,22 @@ export function MobileQRScanner({
     } catch (err: any) {
       console.error("initializeMediaDevices: Error initializing media devices:", err)
       setCameraPermissionGranted(false)
-      setMicrophonePermissionGranted(false) // Assume both denied if general permission error
-      const errorMessage =
-        err.name === "NotAllowedError" || err.name === "PermissionDeniedError"
-          ? "Camera and/or microphone permission denied. Please allow access in your browser settings."
-          : err.name === "NotFoundError" || err.name === "DevicesNotFoundError"
-            ? "No camera or microphone found on this device."
-            : `Failed to access media devices: ${err.message || err.name}`
+      setMicrophonePermissionGranted(false)
+
+      let errorMessage = ""
+      if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
+        errorMessage = "Camera and/or microphone permission denied. Please allow access in your browser settings."
+      } else if (err.name === "NotFoundError" || err.name === "DevicesNotFoundError") {
+        errorMessage = "No camera or microphone found on this device."
+      } else if (err.name === "NotReadableError" || err.message?.includes("in use")) {
+        errorMessage =
+          "Camera is currently in use by another application. Please close other camera apps and try again."
+      } else {
+        errorMessage = `Failed to access media devices: ${err.message || err.name}`
+      }
+
       setError(errorMessage)
-      setCameraStartupError(errorMessage) // Set specific startup error
+      setCameraStartupError(errorMessage)
       setMediaStreamStatus("permission_denied")
       toast({
         title: "Media Access Error",
@@ -162,96 +217,85 @@ export function MobileQRScanner({
     initializeMediaDevices()
   }, [initializeMediaDevices])
 
-  const startCamera = async (attempt = 1) => {
-    console.log(`startCamera: Attempting to start camera (Attempt ${attempt}/${MAX_RETRIES}).`)
-    setRetryCount(attempt - 1) // Update retry count for UI
-
-    if (cameraPermissionGranted === false) {
-      setError("Camera permission denied. Please allow camera access in your browser settings.")
-      toast({
-        title: "Camera Access Denied",
-        description: "Please allow camera access to use the QR scanner.",
-        variant: "destructive",
-      })
-      setMediaStreamStatus("permission_denied")
-      return
-    }
-
-    if (!currentCameraId && availableCameras.length === 0) {
-      console.log("startCamera: No current camera ID or available cameras. Re-initializing devices.")
-      await initializeMediaDevices()
-      if (!currentCameraId && availableCameras.length === 0) {
-        setError("No camera devices found or selected.")
-        setCameraStartupError("No camera devices found or selected.")
-        setMediaStreamStatus("no_devices")
+  const startCamera = useCallback(
+    async (attempt = 1) => {
+      if (mediaStreamStatus === "requesting_permissions" || mediaStreamStatus === "retrying_stream") {
+        console.log("startCamera: Already starting camera, skipping duplicate request")
         return
       }
-    }
 
-    setCameraInitializing(true)
-    setCameraStartupError(null)
-    setError(null)
-    setMediaStreamStatus(attempt > 1 ? "retrying_stream" : "requesting_permissions")
-    setVideoElementError(null) // Clear previous video element errors
-    setIsPlaying(false) // Reset playing state
-    try {
-      if (stream) {
-        console.log("startCamera: Stopping existing stream before starting new one.")
-        stream.getTracks().forEach((track) => track.stop())
-        setStream(null)
+      console.log(`startCamera: Starting camera (attempt ${attempt})`)
+      setMediaStreamStatus(attempt > 1 ? "retrying_stream" : "requesting_permissions")
+      setVideoElementError(null)
+      setIsPlaying(false)
+
+      try {
+        if (stream) {
+          console.log("startCamera: Stopping existing stream before starting new one.")
+          stream.getTracks().forEach((track) => {
+            track.stop()
+            console.log(`Stopped existing ${track.kind} track:`, track.label)
+          })
+          setStream(null)
+
+          await new Promise((resolve) => setTimeout(resolve, 200))
+          console.log("startCamera: Existing stream cleaned up with delay")
+        }
+
+        const constraints: MediaStreamConstraints = {
+          video: currentCameraId ? { deviceId: { exact: currentCameraId } } : { facingMode: cameraFacing },
+          audio: true,
+        }
+
+        console.log("startCamera: Attempting to get user media with constraints:", constraints)
+        const newStream = await navigator.mediaDevices.getUserMedia(constraints)
+        console.log("startCamera: Successfully got user media stream.")
+
+        setMicrophonePermissionGranted(newStream.getAudioTracks().length > 0)
+
+        setStream(newStream) // Set stream immediately
+        // setIsScanning(true) // Removed: isScanning will be set in handleVideoCanPlay
+        setMediaStreamStatus("stream_active") // Set status to active immediately
+        setRetryCount(0) // Reset retry count on success
+        setCameraInitializing(false) // Explicitly set to false on success
+        setShowZoomControls(true)
+
+        toast({
+          title: "Camera Started",
+          description: `Using ${cameraFacing === "environment" ? "back" : "front"} camera`,
+        })
+      } catch (err: any) {
+        console.error("startCamera: Error starting camera (getUserMedia failed):", err)
+        const errorMessage =
+          err.name === "NotAllowedError" || err.name === "PermissionDeniedError"
+            ? "Camera and/or microphone access denied. Please grant permission in your browser settings."
+            : err.name === "NotFoundError" || err.name === "DevicesNotFoundError"
+              ? "No suitable camera or microphone found or available."
+              : err.name === "NotReadableError"
+                ? "Camera or microphone is already in use or not accessible. Please close other apps using them."
+                : err.name === "OverconstrainedError"
+                  ? "Media constraints not supported by device. Try a different camera/microphone or device."
+                  : `Failed to start media: ${err.message || err.name}`
+        setError(errorMessage)
+        setCameraStartupError(errorMessage)
+        setMediaStreamStatus("permission_denied") // Or stream_error if it's a device issue
+        toast({
+          title: "Media Error",
+          description: errorMessage,
+          variant: "destructive",
+        })
+        setCameraInitializing(false) // Explicitly set to false on error
+
+        if (attempt < MAX_RETRIES && (err.name === "NotReadableError" || err.name === "OverconstrainedError")) {
+          console.log(`startCamera: Retrying getUserMedia in 1 second... (Attempt ${attempt + 1})`)
+          setTimeout(() => startCamera(attempt + 1), 1000)
+        } else {
+          console.error("startCamera: Max retries reached for getUserMedia or unrecoverable error.")
+        }
       }
-
-      const constraints: MediaStreamConstraints = {
-        video: currentCameraId ? { deviceId: { exact: currentCameraId } } : { facingMode: cameraFacing },
-        audio: true,
-      }
-
-      console.log("startCamera: Attempting to get user media with constraints:", constraints)
-      const newStream = await navigator.mediaDevices.getUserMedia(constraints)
-      console.log("startCamera: Successfully got user media stream.")
-
-      setMicrophonePermissionGranted(newStream.getAudioTracks().length > 0)
-
-      setStream(newStream) // Set stream immediately
-      // setIsScanning(true) // Removed: isScanning will be set in handleVideoCanPlay
-      setMediaStreamStatus("stream_active") // Set status to active immediately
-      setRetryCount(0) // Reset retry count on success
-      setCameraInitializing(false) // Explicitly set to false on success
-
-      toast({
-        title: "Camera Started",
-        description: `Using ${cameraFacing === "environment" ? "back" : "front"} camera`,
-      })
-    } catch (err: any) {
-      console.error("startCamera: Error starting camera (getUserMedia failed):", err)
-      const errorMessage =
-        err.name === "NotAllowedError" || err.name === "PermissionDeniedError"
-          ? "Camera and/or microphone access denied. Please grant permission in your browser settings."
-          : err.name === "NotFoundError" || err.name === "DevicesNotFoundError"
-            ? "No suitable camera or microphone found or available."
-            : err.name === "NotReadableError"
-              ? "Camera or microphone is already in use or not accessible. Please close other apps using them."
-              : err.name === "OverconstrainedError"
-                ? "Media constraints not supported by device. Try a different camera/microphone or device."
-                : `Failed to start media: ${err.message || err.name}`
-      setError(errorMessage)
-      setCameraStartupError(errorMessage)
-      setMediaStreamStatus("permission_denied") // Or stream_error if it's a device issue
-      toast({
-        title: "Media Error",
-        description: errorMessage,
-        variant: "destructive",
-      })
-      setCameraInitializing(false) // Explicitly set to false on error
-
-      if (attempt < MAX_RETRIES && (err.name === "NotReadableError" || err.name === "OverconstrainedError")) {
-        console.log(`startCamera: Retrying getUserMedia in 1 second... (Attempt ${attempt + 1})`)
-        setTimeout(() => startCamera(attempt + 1), 1000)
-      } else {
-        console.error("startCamera: Max retries reached for getUserMedia or unrecoverable error.")
-      }
-    }
-  }
+    },
+    [stream, toast],
+  )
 
   // Effect to handle video playback when stream is available and its cleanup
   useEffect(() => {
@@ -262,11 +306,14 @@ export function MobileQRScanner({
       return () => {
         console.log("useEffect[stream] cleanup: Stopping stream tracks and clearing srcObject.")
         if (stream) {
-          stream.getTracks().forEach((track) => track.stop())
+          stream.getTracks().forEach((track) => {
+            track.stop()
+            console.log(`Effect cleanup stopped ${track.kind} track:`, track.label)
+          })
         }
         if (videoRef.current) {
           videoRef.current.srcObject = null
-          videoRef.current.oncanplay = null // Clear listeners
+          videoRef.current.oncanplay = null
           videoRef.current.onerror = null
         }
       }
@@ -317,23 +364,9 @@ export function MobileQRScanner({
 
   const stopCamera = useCallback(() => {
     console.log("stopCamera: Stopping camera and scanning.")
-    if (scanIntervalRef.current) {
-      clearInterval(scanIntervalRef.current)
-      scanIntervalRef.current = null
-      console.log("stopCamera: QR scanning interval stopped.")
-    }
-
-    // Set stream to null to trigger the useEffect[stream] cleanup
-    setStream(null)
-
-    setIsScanning(false)
-    setMediaStreamStatus("idle")
-    setRetryCount(0) // Reset retry count
-    setVideoReadyState(0) // Reset video ready state
-    setIsPlaying(false) // Reset playing state
-    setVideoElementError(null) // Clear video element errors
-    console.log("stopCamera: Camera stopped.")
-  }, []) // Removed stream from dependencies, as setStream(null) handles it.
+    cleanupStream()
+    setRetryCount(0)
+  }, [cleanupStream])
 
   const handleScanSuccess = useCallback(
     async (decodedText: string) => {
@@ -520,6 +553,8 @@ export function MobileQRScanner({
     setVideoReadyState(0) // Reset video ready state
     setIsPlaying(false) // Reset playing state
     setVideoElementError(null) // Clear video element errors
+    setZoomLevel(1)
+    setShowZoomControls(false)
 
     if (isScanning) {
       stopCamera()
@@ -562,6 +597,20 @@ export function MobileQRScanner({
         })
     }
   }, [toast])
+
+  const handleZoomChange = useCallback((value: number[]) => {
+    const newZoom = value[0]
+    setZoomLevel(newZoom)
+    console.log("Zoom level changed to:", newZoom)
+  }, [])
+
+  const zoomIn = useCallback(() => {
+    setZoomLevel((prev) => Math.min(prev + 0.2, 5))
+  }, [])
+
+  const zoomOut = useCallback(() => {
+    setZoomLevel((prev) => Math.max(prev - 0.2, 1))
+  }, [])
 
   return (
     <div className={`w-full max-w-md mx-auto ${className}`}>
@@ -613,6 +662,11 @@ export function MobileQRScanner({
                 playsInline
                 muted
                 className="w-full h-full object-cover" // Removed conditional hidden class
+                style={{
+                  transform: `scale(${zoomLevel})`,
+                  transformOrigin: "center center",
+                  transition: "transform 0.2s ease-out",
+                }}
                 onCanPlay={handleVideoCanPlay}
                 onError={handleVideoError}
               />
@@ -731,6 +785,59 @@ export function MobileQRScanner({
               )}
             </div>
           </div>
+
+          {showZoomControls && isScanning && isPlaying && (
+            <div className="mb-4 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="font-medium text-sm flex items-center gap-2">
+                  <Camera className="w-4 h-4" />
+                  Zoom Level
+                </h4>
+                <Badge variant="outline" className="text-xs">
+                  {zoomLevel.toFixed(1)}x
+                </Badge>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <Button
+                  onClick={zoomOut}
+                  variant="outline"
+                  size="sm"
+                  className="h-8 w-8 p-0 bg-transparent"
+                  disabled={zoomLevel <= 1}
+                >
+                  <ZoomOut className="w-4 h-4" />
+                </Button>
+
+                <div className="flex-1">
+                  <Slider
+                    value={[zoomLevel]}
+                    onValueChange={handleZoomChange}
+                    min={1}
+                    max={5}
+                    step={0.1}
+                    className="w-full"
+                  />
+                </div>
+
+                <Button
+                  onClick={zoomIn}
+                  variant="outline"
+                  size="sm"
+                  className="h-8 w-8 p-0 bg-transparent"
+                  disabled={zoomLevel >= 5}
+                >
+                  <ZoomIn className="w-4 h-4" />
+                </Button>
+              </div>
+
+              <div className="flex justify-between text-xs text-gray-500 mt-1">
+                <span>1x</span>
+                <span>3x</span>
+                <span>5x</span>
+              </div>
+            </div>
+          )}
 
           {/* Error Message */}
           {error && (
